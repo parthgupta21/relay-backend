@@ -1,0 +1,4 @@
+CREATE DATABASE IF NOT EXISTS relay;
+CREATE DATABASE IF NOT EXISTS relay_test;
+GRANT ALL PRIVILEGES ON relay.* TO 'relay'@'%';
+GRANT ALL PRIVILEGES ON relay_test.* TO 'relay'@'%';
