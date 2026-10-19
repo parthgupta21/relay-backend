@@ -48,6 +48,7 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - Events list cursor is base64url JSON `{receivedAt, id}` with the internal event id, as specified; it is opaque to clients.
 - Ingest clips path to 2048, content-type and idempotency key to 255 so oversize values never cause a DB error.
 - `createdAt: "created_at"` in model options renames the attribute, not the column; removed from every model, since `underscored: true` already maps the column.
+- Locally `APP_BASE_URL=http://localhost:5173` (the SPA, which proxies `/api` and `/h`): it is the CSRF Origin and the base of email links. `HOOKS_BASE_URL` stays on the API port. End-to-end flow through the SPA proxy verified on 2026-10-20.
 
 ## Known gaps
 
