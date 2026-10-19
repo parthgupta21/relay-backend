@@ -6,6 +6,7 @@ const sequelize = require("./database");
 const { processJob } = require("./services/delivery");
 const queue = require("./services/queue");
 const { sweep } = require("./services/sweeper");
+const { purgeExpired } = require("./services/retention");
 
 const connection = new IORedis(process.env.REDIS_URL, {
   maxRetriesPerRequest: null,
@@ -25,6 +26,13 @@ const timers = [
   setInterval(
     () => sweep().catch((err) => console.error("sweep failed", err.message)),
     Number(process.env.SWEEPER_INTERVAL_MS) || 30000,
+  ),
+  setInterval(
+    () =>
+      purgeExpired()
+        .then((purged) => purged && console.info(`retention purged=${purged}`))
+        .catch((err) => console.error("retention failed", err.message)),
+    Number(process.env.RETENTION_INTERVAL_MS) || 3600000,
   ),
 ];
 
