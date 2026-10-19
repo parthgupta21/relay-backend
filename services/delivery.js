@@ -1,3 +1,5 @@
+const { QueryTypes } = require("sequelize");
+const { DelayedError } = require("bullmq");
 const {
   sequelize,
   Delivery,
@@ -10,6 +12,7 @@ const {
 const { checkUrl, SsrfError } = require("./ssrf");
 const { send } = require("./outbound");
 const { enqueueDeliveries } = require("./queue");
+const { acquire, release } = require("./semaphore");
 const { retryDelay, parseRetryAfter } = require("../utils/backoff");
 
 const LOCK_SECONDS = 60;
@@ -142,4 +145,31 @@ const processDelivery = async (deliveryId) => {
   return recordAttempt(delivery, result);
 };
 
-module.exports = { processDelivery };
+const deliveryScope = async (deliveryId) =>
+  (
+    await sequelize.query(
+      `SELECT d.destination_id AS destinationId, e.workspace_id AS workspaceId
+FROM deliveries d
+JOIN destinations ds ON ds.id = d.destination_id
+JOIN endpoints e ON e.id = ds.endpoint_id
+WHERE d.id = ?`,
+      { replacements: [deliveryId], type: QueryTypes.SELECT },
+    )
+  )[0];
+
+const processJob = async (job, token) => {
+  const { deliveryId } = job.data;
+  const scope = await deliveryScope(deliveryId);
+  if (!scope) return;
+  if (!(await acquire(scope, job.id))) {
+    await job.moveToDelayed(Date.now() + 2000 + Math.random() * 3000, token);
+    throw new DelayedError();
+  }
+  try {
+    await processDelivery(deliveryId);
+  } finally {
+    await release(scope, job.id);
+  }
+};
+
+module.exports = { processDelivery, processJob };

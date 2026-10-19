@@ -37,4 +37,4 @@ const close = async () => {
   connection.disconnect();
 };
 
-module.exports = { QUEUE_NAME, enqueueDeliveries, close };
+module.exports = { QUEUE_NAME, connection, queue, enqueueDeliveries, close };

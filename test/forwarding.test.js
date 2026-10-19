@@ -6,7 +6,7 @@ const { Worker } = require("bullmq");
 const { app, request, sequelize, resetDatabase, signUp } = require("./helpers");
 const { startReceiver } = require("./receiver");
 const { Delivery, Destination, Event } = require("../models");
-const { processDelivery } = require("../services/delivery");
+const { processDelivery, processJob } = require("../services/delivery");
 const queue = require("../services/queue");
 
 process.env.RETRY_BASE_MS = "20";
@@ -25,11 +25,10 @@ before(async () => {
   workerConnection = new IORedis(process.env.REDIS_URL, {
     maxRetriesPerRequest: null,
   });
-  worker = new Worker(
-    queue.QUEUE_NAME,
-    (job) => processDelivery(job.data.deliveryId),
-    { connection: workerConnection, concurrency: 5 },
-  );
+  worker = new Worker(queue.QUEUE_NAME, processJob, {
+    connection: workerConnection,
+    concurrency: 5,
+  });
   await worker.waitUntilReady();
 });
 
