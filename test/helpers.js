@@ -9,6 +9,9 @@ const PASSWORD = "correct-horse-battery";
 const resetDatabase = async () => {
   for (const table of [
     "audit_log",
+    "delivery_attempts",
+    "deliveries",
+    "destinations",
     "events",
     "endpoints",
     "sessions",

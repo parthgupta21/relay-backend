@@ -6,6 +6,7 @@ let alice;
 let bob;
 let endpoint;
 let eventId;
+let destination;
 
 before(async () => {
   await resetDatabase();
@@ -13,6 +14,11 @@ before(async () => {
   bob = await signUp("bob@example.com");
   endpoint = (await alice.post("/api/v1/endpoints").send({ name: "private" }))
     .body;
+  destination = (
+    await alice
+      .post(`/api/v1/endpoints/${endpoint.id}/destinations`)
+      .send({ name: "d", url: "http://93.184.216.34/hook" })
+  ).body;
   eventId = (
     await request(app.callback()).post(`/h/${endpoint.slug}`).send("secret")
   ).body.id;
@@ -25,6 +31,7 @@ test("owner can reach everything", async () => {
     `/endpoints/${endpoint.id}/events`,
     `/events/${eventId}`,
     `/events/${eventId}/body`,
+    `/endpoints/${endpoint.id}/destinations`,
   ])
     assert.strictEqual((await alice.get(`/api/v1${path}`)).status, 200, path);
 });
@@ -37,6 +44,15 @@ test("another tenant gets 404 on every endpoint and event route", async () => {
     bob.get(`/api/v1/endpoints/${endpoint.id}/events`),
     bob.get(`/api/v1/events/${eventId}`),
     bob.get(`/api/v1/events/${eventId}/body`),
+    bob.get(`/api/v1/endpoints/${endpoint.id}/destinations`),
+    bob
+      .post(`/api/v1/endpoints/${endpoint.id}/destinations`)
+      .send({ name: "x", url: "http://93.184.216.34/hook" }),
+    bob
+      .patch(`/api/v1/destinations/${destination.id}`)
+      .send({ name: "hijack" }),
+    bob.post(`/api/v1/destinations/${destination.id}/rotate-secret`),
+    bob.delete(`/api/v1/destinations/${destination.id}`),
     bob.delete(`/api/v1/endpoints/${endpoint.id}`),
   ];
   for (const res of await Promise.all(attempts)) {
@@ -52,6 +68,10 @@ test("another tenant gets 404 on every endpoint and event route", async () => {
     (await alice.get(`/api/v1/events/${eventId}`)).status,
     200,
   );
+  const [intactDestination] = (
+    await alice.get(`/api/v1/endpoints/${endpoint.id}/destinations`)
+  ).body;
+  assert.strictEqual(intactDestination.name, "d");
 });
 
 test("unauthenticated requests get 401", async () => {

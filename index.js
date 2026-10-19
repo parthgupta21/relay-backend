@@ -8,6 +8,7 @@ const originCheck = require("./middleware/originCheck");
 const authRoutes = require("./routes/auth");
 const endpointRoutes = require("./routes/endpoints");
 const eventRoutes = require("./routes/events");
+const destinationRoutes = require("./routes/destinations");
 const ingestRoutes = require("./routes/ingest");
 const namespace = require("./namespace");
 const sequelize = require("./database");
@@ -54,6 +55,7 @@ if (role !== "ingest") {
   api.use(authRoutes.routes());
   api.use(endpointRoutes.routes());
   api.use(eventRoutes.routes());
+  api.use(destinationRoutes.routes());
   app.use(api.routes());
 }
 
