@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const ipaddr = require("ipaddr.js");
 const { ulid } = require("ulid");
 
 const ERROR_CODES = {
@@ -28,4 +29,16 @@ const randomToken = (bytes) => crypto.randomBytes(bytes).toString("base64url");
 
 const sha256 = (input) => crypto.createHash("sha256").update(input).digest();
 
-module.exports = { ERROR_CODES, AppError, publicId, randomToken, sha256 };
+const ipToBytes = (ip) => Buffer.from(ipaddr.process(ip).toByteArray());
+
+const bytesToIp = (bytes) => ipaddr.fromByteArray([...bytes]).toString();
+
+module.exports = {
+  ERROR_CODES,
+  AppError,
+  publicId,
+  randomToken,
+  sha256,
+  ipToBytes,
+  bytesToIp,
+};

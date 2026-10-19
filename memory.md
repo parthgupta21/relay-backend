@@ -23,7 +23,7 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 ## Phase checklist (doc section 21)
 - [ ] Phase 1: backend foundation, auth, endpoints, ingest, inspector API
   - [x] B1 scaffold
-  - [ ] B2 migrations and models
+  - [x] B2 migrations and models
   - [ ] B3 registration, verification, sessions
   - [ ] B4 endpoints, ingest, event inspector API
 - [ ] Phase 2: destinations, deliveries, queue worker, retries
