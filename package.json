@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "worker": "node worker.js",
     "migrate": "sequelize-cli db:migrate",
     "migrate:test": "sequelize-cli db:migrate --env test",
     "test": "npm run migrate:test && node --test --test-concurrency=1 \"test/*.test.js\"",
@@ -14,8 +15,10 @@
   "dependencies": {
     "@koa/router": "^15.7.0",
     "argon2": "^0.45.1",
+    "bullmq": "^6.3.17",
     "cls-hooked": "^4.2.2",
     "dotenv": "^18.0.8",
+    "ioredis": "^6.0.0",
     "ipaddr.js": "^2.5.0",
     "koa": "^3.2.1",
     "koa-bodyparser": "^4.4.1",

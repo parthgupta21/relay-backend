@@ -1,7 +1,7 @@
 const Router = require("@koa/router");
 const { Op } = require("sequelize");
 const { z } = require("zod");
-const { Endpoint, Event } = require("../models");
+const { Endpoint, Event, Delivery, Destination } = require("../models");
 const auth = require("../middleware/auth");
 const validate = require("../middleware/validate");
 const { bytesToIp } = require("../utils");
@@ -112,7 +112,13 @@ router.get("/events/:id", validate({ params }), async (ctx) => {
     idempotencyKey: event.idempotencyKey,
     body: event.body ? event.body.toString("base64") : null,
     bodyJson: event.bodyJson,
-    deliveries: [],
+    deliveries: (
+      await Delivery.findAll({
+        where: { eventId: event.id },
+        include: [{ model: Destination, as: "destination", paranoid: false }],
+        order: [["id", "ASC"]],
+      })
+    ).map((delivery) => delivery.present()),
   };
 });
 

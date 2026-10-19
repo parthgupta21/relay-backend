@@ -7,6 +7,7 @@ let bob;
 let endpoint;
 let eventId;
 let destination;
+let deliveryId;
 
 before(async () => {
   await resetDatabase();
@@ -22,6 +23,8 @@ before(async () => {
   eventId = (
     await request(app.callback()).post(`/h/${endpoint.slug}`).send("secret")
   ).body.id;
+  deliveryId = (await alice.get(`/api/v1/events/${eventId}`)).body.deliveries[0]
+    .id;
 });
 after(() => sequelize.close());
 
@@ -32,30 +35,36 @@ test("owner can reach everything", async () => {
     `/events/${eventId}`,
     `/events/${eventId}/body`,
     `/endpoints/${endpoint.id}/destinations`,
+    `/deliveries/${deliveryId}`,
   ])
     assert.strictEqual((await alice.get(`/api/v1${path}`)).status, 200, path);
 });
 
 test("another tenant gets 404 on every endpoint and event route", async () => {
   const attempts = [
-    bob.get(`/api/v1/endpoints/${endpoint.id}`),
-    bob.patch(`/api/v1/endpoints/${endpoint.id}`).send({ name: "hijack" }),
-    bob.post(`/api/v1/endpoints/${endpoint.id}/rotate-slug`),
-    bob.get(`/api/v1/endpoints/${endpoint.id}/events`),
-    bob.get(`/api/v1/events/${eventId}`),
-    bob.get(`/api/v1/events/${eventId}/body`),
-    bob.get(`/api/v1/endpoints/${endpoint.id}/destinations`),
-    bob
-      .post(`/api/v1/endpoints/${endpoint.id}/destinations`)
-      .send({ name: "x", url: "http://93.184.216.34/hook" }),
-    bob
-      .patch(`/api/v1/destinations/${destination.id}`)
-      .send({ name: "hijack" }),
-    bob.post(`/api/v1/destinations/${destination.id}/rotate-secret`),
-    bob.delete(`/api/v1/destinations/${destination.id}`),
-    bob.delete(`/api/v1/endpoints/${endpoint.id}`),
+    () => bob.get(`/api/v1/endpoints/${endpoint.id}`),
+    () =>
+      bob.patch(`/api/v1/endpoints/${endpoint.id}`).send({ name: "hijack" }),
+    () => bob.post(`/api/v1/endpoints/${endpoint.id}/rotate-slug`),
+    () => bob.get(`/api/v1/endpoints/${endpoint.id}/events`),
+    () => bob.get(`/api/v1/events/${eventId}`),
+    () => bob.get(`/api/v1/events/${eventId}/body`),
+    () => bob.get(`/api/v1/endpoints/${endpoint.id}/destinations`),
+    () =>
+      bob
+        .post(`/api/v1/endpoints/${endpoint.id}/destinations`)
+        .send({ name: "x", url: "http://93.184.216.34/hook" }),
+    () =>
+      bob
+        .patch(`/api/v1/destinations/${destination.id}`)
+        .send({ name: "hijack" }),
+    () => bob.post(`/api/v1/destinations/${destination.id}/rotate-secret`),
+    () => bob.delete(`/api/v1/destinations/${destination.id}`),
+    () => bob.get(`/api/v1/deliveries/${deliveryId}`),
+    () => bob.delete(`/api/v1/endpoints/${endpoint.id}`),
   ];
-  for (const res of await Promise.all(attempts)) {
+  for (const attempt of attempts) {
+    const res = await attempt();
     assert.strictEqual(res.status, 404);
     assert.strictEqual(res.body.error.code, "NOT_FOUND");
   }

@@ -1,7 +1,11 @@
 process.env.NODE_ENV = "test";
+const { after } = require("node:test");
 const request = require("supertest");
 const app = require("../index");
 const { sequelize } = require("../models");
+const queue = require("../services/queue");
+
+after(() => queue.close());
 
 const MAILPIT = process.env.MAILPIT_API;
 const PASSWORD = "correct-horse-battery";

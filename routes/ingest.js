@@ -1,7 +1,14 @@
 const Router = require("@koa/router");
 const { getRawBody } = require("raw-body");
 const { UniqueConstraintError } = require("sequelize");
-const { Endpoint, Event } = require("../models");
+const {
+  sequelize,
+  Endpoint,
+  Event,
+  Destination,
+  Delivery,
+} = require("../models");
+const { enqueueDeliveries } = require("../services/queue");
 const { AppError, ipToBytes } = require("../utils");
 
 const router = new Router();
@@ -38,20 +45,43 @@ router.all("/h/:slug{/*rest}", async (ctx) => {
     : null;
 
   try {
-    const event = await Event.create({
-      endpointId: endpoint.id,
-      method: ctx.method,
-      path: ctx.path.slice(`/h/${slug}`.length).slice(0, 2048) || "/",
-      queryString: ctx.querystring || null,
-      headers: ctx.headers,
-      contentType: contentType && contentType.slice(0, 255),
-      body: raw.length ? raw : null,
-      bodyJson,
-      bodySize: raw.length,
-      sourceIp: ipToBytes(ctx.ip),
-      idempotencyKey,
-      receivedAt: new Date(),
-    });
+    const { event, deliveries } = await sequelize.transaction(
+      async (transaction) => {
+        const event = await Event.create(
+          {
+            endpointId: endpoint.id,
+            method: ctx.method,
+            path: ctx.path.slice(`/h/${slug}`.length).slice(0, 2048) || "/",
+            queryString: ctx.querystring || null,
+            headers: ctx.headers,
+            contentType: contentType && contentType.slice(0, 255),
+            body: raw.length ? raw : null,
+            bodyJson,
+            bodySize: raw.length,
+            sourceIp: ipToBytes(ctx.ip),
+            idempotencyKey,
+            receivedAt: new Date(),
+          },
+          { transaction },
+        );
+        const destinations = await Destination.findAll({
+          where: { endpointId: endpoint.id, isActive: true },
+          transaction,
+        });
+        const deliveries = await Delivery.bulkCreate(
+          destinations.map((destination) => ({
+            eventId: event.id,
+            destinationId: destination.id,
+            trigger: "auto",
+            status: "pending",
+            nextAttemptAt: new Date(),
+          })),
+          { transaction },
+        );
+        return { event, deliveries };
+      },
+    );
+    if (deliveries.length) await enqueueDeliveries(deliveries);
     ctx.body = { id: event.publicId, duplicate: false };
   } catch (err) {
     if (!(err instanceof UniqueConstraintError) || !idempotencyKey) throw err;
