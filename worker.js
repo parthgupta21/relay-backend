@@ -5,6 +5,7 @@ const { Worker } = require("bullmq");
 const sequelize = require("./database");
 const { processJob } = require("./services/delivery");
 const queue = require("./services/queue");
+const { sweep } = require("./services/sweeper");
 
 const connection = new IORedis(process.env.REDIS_URL, {
   maxRetriesPerRequest: null,
@@ -20,7 +21,15 @@ worker.on("failed", (job, err) =>
   console.error(`job ${job?.id} failed`, err.stack || err),
 );
 
+const timers = [
+  setInterval(
+    () => sweep().catch((err) => console.error("sweep failed", err.message)),
+    Number(process.env.SWEEPER_INTERVAL_MS) || 30000,
+  ),
+];
+
 const shutdown = async () => {
+  timers.forEach(clearInterval);
   await worker.close();
   await queue.close();
   connection.disconnect();
