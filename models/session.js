@@ -14,7 +14,6 @@ const Session = sequelize.define(
   {
     tableName: "sessions",
     underscored: true,
-    createdAt: "created_at",
     updatedAt: false,
   },
 );

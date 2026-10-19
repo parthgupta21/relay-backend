@@ -47,11 +47,10 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - Any Sequelize ConnectionError maps to 503 SERVICE_UNAVAILABLE (verified by stopping MySQL).
 - Events list cursor is base64url JSON `{receivedAt, id}` with the internal event id, as specified; it is opaque to clients.
 - Ingest clips path to 2048, content-type and idempotency key to 255 so oversize values never cause a DB error.
-- `createdAt: "created_at"` in model options renames the attribute, not the column; only `Endpoint` was fixed (attribute `createdAt`).
+- `createdAt: "created_at"` in model options renames the attribute, not the column; removed from every model, since `underscored: true` already maps the column.
 
 ## Known gaps
 
-- `User`, `Workspace`, `Session`, `AuditLog` models still declare `createdAt: "created_at"`; remove that option (underscored already maps the column) so the attribute is `createdAt`.
 - Endpoint quota check is count-then-insert, so two concurrent creates can exceed the limit by one.
 - `events.method` is VARCHAR(10); HTTP methods longer than 10 chars (e.g. UNSUBSCRIBE) would fail insert with a 500.
 - Email is sent inline during the request; slow SMTP slows the response.

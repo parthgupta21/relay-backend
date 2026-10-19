@@ -14,7 +14,6 @@ const AuditLog = sequelize.define(
   {
     tableName: "audit_log",
     underscored: true,
-    createdAt: "created_at",
     updatedAt: false,
   },
 );

@@ -34,7 +34,6 @@ const Workspace = sequelize.define(
   {
     tableName: "workspaces",
     underscored: true,
-    createdAt: "created_at",
     updatedAt: false,
   },
 );
