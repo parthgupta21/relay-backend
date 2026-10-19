@@ -9,6 +9,8 @@ const { Delivery, Destination, Event } = require("../models");
 const { processDelivery } = require("../services/delivery");
 const queue = require("../services/queue");
 
+process.env.RETRY_BASE_MS = "20";
+
 let agent;
 let endpoint;
 let receiver;
@@ -134,22 +136,63 @@ test("event is forwarded byte-exact and signed to every destination", async () =
   assert.strictEqual(detail.attempts[0].responseHeaders["x-receiver"], "yes");
 });
 
-test("a 500 response fails non-retryably with the attempt recorded", async () => {
+test("a 400 response fails non-retryably with the attempt recorded", async () => {
   await reset();
-  await createDestination("/fail");
+  await createDestination("/bad");
   const res = await ingest("x");
   const [delivery] = await waitForTerminal(res.body.id);
   assert.strictEqual(delivery.status, "failed");
   assert.strictEqual(delivery.failureReason, "non_retryable");
-  assert.strictEqual(delivery.lastStatus, 500);
+  assert.strictEqual(delivery.lastStatus, 400);
   const { attempts } = await deliveryDetail(delivery.id);
+  assert.strictEqual(attempts.length, 1);
   assert.strictEqual(attempts[0].outcome, "http_error");
-  assert.strictEqual(attempts[0].responseBody, "boom");
+  assert.strictEqual(attempts[0].responseBody, "bad");
+});
+
+test("a 500 then a 200 succeeds on the second attempt", async () => {
+  await reset();
+  await createDestination("/flaky");
+  const res = await ingest("x");
+  const [delivery] = await waitForTerminal(res.body.id);
+  assert.strictEqual(delivery.status, "succeeded");
+  assert.strictEqual(delivery.attemptCount, 2);
+  const { attempts } = await deliveryDetail(delivery.id);
+  assert.deepStrictEqual(
+    attempts.map((a) => [a.attemptNo, a.responseStatus]),
+    [
+      [1, 500],
+      [2, 200],
+    ],
+  );
+  assert.deepStrictEqual(
+    receiver.requests.map((r) => r.headers["x-relay-attempt"]),
+    ["1", "2"],
+  );
+});
+
+test("a destination that keeps returning 500 ends exhausted", async () => {
+  await reset();
+  const destination = await createDestination("/fail");
+  await Destination.update(
+    { maxAttempts: 2 },
+    { where: { publicId: destination.id } },
+  );
+  const res = await ingest("x");
+  const [delivery] = await waitForTerminal(res.body.id);
+  assert.strictEqual(delivery.status, "failed");
+  assert.strictEqual(delivery.failureReason, "exhausted");
+  assert.strictEqual(delivery.attemptCount, 2);
+  assert.strictEqual(receiver.requests.length, 2);
 });
 
 test("a receiver that hangs past timeoutMs gives outcome timeout", async () => {
   await reset();
-  await createDestination("/hang", { timeoutMs: 1000 });
+  const destination = await createDestination("/hang", { timeoutMs: 1000 });
+  await Destination.update(
+    { maxAttempts: 1 },
+    { where: { publicId: destination.id } },
+  );
   const res = await ingest("x");
   const [delivery] = await waitForTerminal(res.body.id);
   assert.strictEqual(delivery.status, "failed");

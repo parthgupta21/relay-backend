@@ -17,11 +17,12 @@ const enqueueDeliveries = async (deliveries) => {
     return console.warn("enqueue skipped, redis not ready");
   await queue
     .addBulk(
-      deliveries.map(({ id }) => ({
+      deliveries.map(({ id, attemptCount, nextAttemptAt }) => ({
         name: "deliver",
         data: { deliveryId: id },
         opts: {
-          jobId: `d${id}-a1`,
+          jobId: `d${id}-a${attemptCount + 1}`,
+          delay: Math.max(0, nextAttemptAt - Date.now()),
           attempts: 1,
           removeOnComplete: true,
           removeOnFail: true,

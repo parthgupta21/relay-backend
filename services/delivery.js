@@ -9,6 +9,8 @@ const {
 } = require("../models");
 const { checkUrl, SsrfError } = require("./ssrf");
 const { send } = require("./outbound");
+const { enqueueDeliveries } = require("./queue");
+const { retryDelay, parseRetryAfter } = require("../utils/backoff");
 
 const LOCK_SECONDS = 60;
 
@@ -28,12 +30,45 @@ const claim = async (deliveryId) => {
 
 const settle = (delivery, fields, transaction) =>
   delivery.update(
-    { ...fields, lockedUntil: null, completedAt: new Date() },
+    {
+      lockedUntil: null,
+      completedAt: fields.status === "retry_scheduled" ? null : new Date(),
+      ...fields,
+    },
     { transaction },
   );
 
-const recordAttempt = (delivery, result) =>
-  sequelize.transaction(async (transaction) => {
+const isRetryable = ({ outcome, responseStatus }) =>
+  outcome === "timeout" ||
+  outcome === "network_error" ||
+  (outcome === "http_error" &&
+    (responseStatus === 408 ||
+      responseStatus === 429 ||
+      responseStatus >= 500));
+
+const nextState = (delivery, result) => {
+  const { outcome, responseStatus: lastStatus } = result;
+  if (outcome === "success") return { status: "succeeded", lastStatus };
+  if (outcome === "blocked")
+    return { status: "failed", failureReason: "ssrf_blocked", lastStatus };
+  if (!isRetryable(result))
+    return { status: "failed", failureReason: "non_retryable", lastStatus };
+  if (delivery.attemptCount >= delivery.destination.maxAttempts)
+    return { status: "failed", failureReason: "exhausted", lastStatus };
+  const retryAfter = [429, 503].includes(lastStatus)
+    ? parseRetryAfter(result.responseHeaders["retry-after"])
+    : 0;
+  return {
+    status: "retry_scheduled",
+    lastStatus,
+    nextAttemptAt: new Date(
+      Date.now() + retryDelay(delivery.attemptCount + 1, retryAfter),
+    ),
+  };
+};
+
+const recordAttempt = async (delivery, result) => {
+  await sequelize.transaction(async (transaction) => {
     await DeliveryAttempt.create(
       {
         deliveryId: delivery.id,
@@ -48,19 +83,11 @@ const recordAttempt = (delivery, result) =>
       },
       { transaction },
     );
-    await settle(
-      delivery,
-      result.outcome === "success"
-        ? { status: "succeeded", lastStatus: result.responseStatus }
-        : {
-            status: "failed",
-            failureReason:
-              result.outcome === "blocked" ? "ssrf_blocked" : "non_retryable",
-            lastStatus: result.responseStatus,
-          },
-      transaction,
-    );
+    await settle(delivery, nextState(delivery, result), transaction);
   });
+  if (delivery.status === "retry_scheduled")
+    await enqueueDeliveries([delivery]);
+};
 
 const processDelivery = async (deliveryId) => {
   if (!(await claim(deliveryId))) return;

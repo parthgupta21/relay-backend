@@ -17,6 +17,14 @@ const startReceiver = async () => {
         res.writeHead(500);
         return res.end("boom");
       }
+      if (req.url === "/bad") {
+        res.writeHead(400);
+        return res.end("bad");
+      }
+      if (req.url === "/flaky" && requests.length === 1) {
+        res.writeHead(500);
+        return res.end("boom");
+      }
       if (req.url === "/redirect") {
         res.writeHead(302, { Location: "/redirected" });
         return res.end();
