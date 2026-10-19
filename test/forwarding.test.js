@@ -125,6 +125,8 @@ test("event is forwarded byte-exact and signed to every destination", async () =
 
   const detail = await deliveryDetail(deliveries[0].id);
   assert.strictEqual(detail.eventId, res.body.id);
+  assert.strictEqual(detail.trigger, "auto");
+  assert.strictEqual(detail.replayOf, null);
   assert.strictEqual(detail.attemptCount, 1);
   assert.strictEqual(detail.lastStatus, 200);
   assert.ok(detail.completedAt);

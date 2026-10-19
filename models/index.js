@@ -31,6 +31,7 @@ Delivery.belongsTo(Destination, {
   as: "destination",
   foreignKey: "destinationId",
 });
+Delivery.belongsTo(Delivery, { as: "replayOf", foreignKey: "replayOfId" });
 Delivery.hasMany(DeliveryAttempt, { as: "attempts", foreignKey: "deliveryId" });
 DeliveryAttempt.belongsTo(Delivery, {
   as: "delivery",
