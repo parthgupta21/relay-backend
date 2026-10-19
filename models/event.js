@@ -1,6 +1,6 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database");
-const { publicId } = require("../utils");
+const { AppError, publicId } = require("../utils");
 
 const Event = sequelize.define(
   "Event",
@@ -30,5 +30,20 @@ const Event = sequelize.define(
     timestamps: false,
   },
 );
+
+Event.getOwned = async (workspaceId, id) => {
+  const event = await Event.findOne({
+    where: { publicId: id },
+    include: [
+      {
+        model: sequelize.models.Endpoint.forWorkspace(workspaceId),
+        as: "endpoint",
+        required: true,
+      },
+    ],
+  });
+  if (!event) throw new AppError("NOT_FOUND", 404, "Event not found");
+  return event;
+};
 
 module.exports = Event;

@@ -24,11 +24,11 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 
 ## Phase checklist (doc section 21)
 
-- [ ] Phase 1: backend foundation, auth, endpoints, ingest, inspector API
+- [x] Phase 1: backend foundation, auth, endpoints, ingest, inspector API (26 tests passing)
   - [x] B1 scaffold
   - [x] B2 migrations and models
   - [x] B3 registration, verification, sessions
-  - [ ] B4 endpoints, ingest, event inspector API
+  - [x] B4 endpoints, ingest, event inspector API
 - [ ] Phase 2: destinations, deliveries, queue worker, retries
 - [ ] Phase 3: realtime (Socket.IO), replay
 - [ ] Phase 4: API tokens, usage, rate limits, quotas
@@ -41,6 +41,18 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - errorHandler converts any non-AppError into 500 INTERNAL with a generic message; the real error is logged.
 - Unmatched routes fall through to the NOT_FOUND envelope.
 
+- Installed versions are newer than the doc assumed: @koa/router 15, koa 3, zod 4, raw-body 4 (ESM-only package: use `const { getRawBody } = require("raw-body")`).
+- Ingest wildcard is `/h/:slug{/*rest}`; verified for `/h/slug`, `/h/slug/`, `/h/slug/a/b`.
+- Tenant scoping: `Endpoint.getOwned` and `Event.getOwned` go through the `forWorkspace` scope; not owned is always 404.
+- Any Sequelize ConnectionError maps to 503 SERVICE_UNAVAILABLE (verified by stopping MySQL).
+- Events list cursor is base64url JSON `{receivedAt, id}` with the internal event id, as specified; it is opaque to clients.
+- Ingest clips path to 2048, content-type and idempotency key to 255 so oversize values never cause a DB error.
+- `createdAt: "created_at"` in model options renames the attribute, not the column; only `Endpoint` was fixed (attribute `createdAt`).
+
 ## Known gaps
 
+- `User`, `Workspace`, `Session`, `AuditLog` models still declare `createdAt: "created_at"`; remove that option (underscored already maps the column) so the attribute is `createdAt`.
+- Endpoint quota check is count-then-insert, so two concurrent creates can exceed the limit by one.
+- `events.method` is VARCHAR(10); HTTP methods longer than 10 chars (e.g. UNSUBSCRIBE) would fail insert with a 500.
+- Email is sent inline during the request; slow SMTP slows the response.
 - Phase 2+ not started.

@@ -6,6 +6,9 @@ const Router = require("@koa/router");
 const bodyParser = require("koa-bodyparser");
 const originCheck = require("./middleware/originCheck");
 const authRoutes = require("./routes/auth");
+const endpointRoutes = require("./routes/endpoints");
+const eventRoutes = require("./routes/events");
+const ingestRoutes = require("./routes/ingest");
 const namespace = require("./namespace");
 const sequelize = require("./database");
 const errorHandler = require("./middleware/errorHandler");
@@ -49,8 +52,12 @@ if (role !== "ingest") {
     bodyParser({ enableTypes: ["json"], jsonLimit: "100kb" }),
   );
   api.use(authRoutes.routes());
+  api.use(endpointRoutes.routes());
+  api.use(eventRoutes.routes());
   app.use(api.routes());
 }
+
+if (role !== "app") app.use(ingestRoutes.routes());
 
 if (require.main === module) {
   const port = process.env.PORT || 3000;

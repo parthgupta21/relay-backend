@@ -1,8 +1,11 @@
+const { ConnectionError } = require("sequelize");
 const namespace = require("../namespace");
 const { AppError } = require("../utils");
 
 const toAppError = (err) => {
   if (err instanceof AppError) return err;
+  if (err instanceof ConnectionError)
+    return new AppError("SERVICE_UNAVAILABLE", 503, "Database unavailable");
   if (err.status === 413)
     return new AppError("PAYLOAD_TOO_LARGE", 413, "Payload too large");
   if (err.status >= 400 && err.status < 500)
