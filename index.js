@@ -3,6 +3,9 @@ require("./logging");
 const crypto = require("crypto");
 const Koa = require("koa");
 const Router = require("@koa/router");
+const bodyParser = require("koa-bodyparser");
+const originCheck = require("./middleware/originCheck");
+const authRoutes = require("./routes/auth");
 const namespace = require("./namespace");
 const sequelize = require("./database");
 const errorHandler = require("./middleware/errorHandler");
@@ -37,12 +40,22 @@ health.get("/readyz", async (ctx) => {
 });
 app.use(health.routes());
 
+const role = process.env.ROLE || "all";
+
+if (role !== "ingest") {
+  const api = new Router({ prefix: "/api/v1" });
+  api.use(
+    originCheck,
+    bodyParser({ enableTypes: ["json"], jsonLimit: "100kb" }),
+  );
+  api.use(authRoutes.routes());
+  app.use(api.routes());
+}
+
 if (require.main === module) {
   const port = process.env.PORT || 3000;
   app.listen(port, () =>
-    console.info(
-      `relay listening on ${port} role=${process.env.ROLE || "all"}`,
-    ),
+    console.info(`relay listening on ${port} role=${role}`),
   );
 }
 

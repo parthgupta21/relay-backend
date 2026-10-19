@@ -18,14 +18,16 @@ const EmailToken = sequelize.define(
   },
 );
 
-EmailToken.issue = async (userId, purpose, ttlMs, transaction) => {
+EmailToken.TTL_MS = { verify: 24 * 60 * 60 * 1000, reset: 60 * 60 * 1000 };
+
+EmailToken.issue = async (userId, purpose, transaction) => {
   const token = randomToken(32);
   await EmailToken.create(
     {
       userId,
       purpose,
       tokenHash: sha256(token),
-      expiresAt: new Date(Date.now() + ttlMs),
+      expiresAt: new Date(Date.now() + EmailToken.TTL_MS[purpose]),
     },
     { transaction },
   );

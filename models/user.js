@@ -3,7 +3,6 @@ const { DataTypes, UniqueConstraintError } = require("sequelize");
 const sequelize = require("../database");
 const { publicId } = require("../utils");
 
-const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const dummyHash = argon2.hash("not-a-real-password");
 
 const User = sequelize.define(
@@ -43,12 +42,7 @@ User.register = async (email, password) => {
         { ownerUserId: user.id, ...Workspace.planDefaults() },
         { transaction },
       );
-      const token = await EmailToken.issue(
-        user.id,
-        "verify",
-        VERIFY_TTL_MS,
-        transaction,
-      );
+      const token = await EmailToken.issue(user.id, "verify", transaction);
       return { user, token };
     });
   } catch (err) {
