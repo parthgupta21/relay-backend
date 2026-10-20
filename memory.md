@@ -29,12 +29,17 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
   - [x] B2 migrations and models
   - [x] B3 registration, verification, sessions
   - [x] B4 endpoints, ingest, event inspector API
-- [ ] Phase 2: forwarding (doc phase 2; retries, sweeper, semaphores and replay come later)
+- [x] Phase 2: forwarding
   - [x] Stage 1: destinations, deliveries, delivery_attempts tables, SSRF checks, encrypted signing secrets, destination API
   - [x] Stage 2: ingest creates deliveries, BullMQ queue, worker, outbound HTTP, read API (56 tests passing)
-- [ ] Phase 3: realtime (Socket.IO), replay
-- [ ] Phase 4: API tokens, usage, rate limits, quotas
-- [ ] Phase 5: analytics, retention, account deletion, admin
+- [x] Phase 3: retries, semaphores, sweeper, replay, retention (84 tests passing)
+  - [x] A: retries with backoff and jitter, status classification
+  - [x] B: per-destination and per-workspace concurrency semaphores
+  - [x] C: sweeper for stuck and missed deliveries
+  - [x] D: manual replay with Idempotency-Key
+  - [x] E: retention purge
+- [ ] Phase 4: realtime (Socket.IO), API tokens, usage, rate limits, quotas
+- [ ] Phase 5: analytics, account deletion, admin
 - [ ] Phase 6: hardening, deploy, observability
 
 ## Decisions
@@ -59,14 +64,32 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - Delivery flow: ingest inserts the event and one `pending` delivery per active destination in one transaction, then `addBulk` enqueues jobs `d{id}-a1` on queue `deliveries`. The worker claims with a conditional UPDATE, re-runs the SSRF check, sends with a pinned lookup, then inserts the attempt and updates the delivery in one transaction after the HTTP call.
 - ioredis is installed explicitly because bullmq 6 lists it only as an optional peer dependency. The producer connection uses `enableOfflineQueue: false`, and ingest also checks `connection.status === "ready"` first: BullMQ `addBulk` otherwise waits for a connection forever (verified: ingest hung with Redis down before that check).
 - Response bodies are read up to 64KB, then the socket is destroyed.
+- Retries: 2xx succeeds; 408, 429, 5xx, timeout and network_error are retryable; 3xx, other 4xx and blocked are not. Delay before attempt n is `min(cap, base * 2^(n-2))` with equal jitter (half fixed, half random); `Retry-After` (seconds or HTTP date) on 429/503 wins if longer, capped. A retry is a delayed BullMQ job `d{id}-a{n+1}` added after the DB commit. Out of attempts gives `failed`/`exhausted`.
+- `enqueueDeliveries` derives jobId (`d{id}-a{attemptCount+1}`) and delay (`nextAttemptAt - now`) from the delivery row, so ingest, retry, sweeper and replay share it. BullMQ drops duplicate jobIds, which makes the sweeper safe to re-add.
+- Semaphores (`services/semaphore.js`): Redis sorted sets `sem:dst:{id}` and `sem:ws:{id}` (prefixed `test:` under NODE_ENV=test), member = job id, score = expiry (now + 60s). One Lua script prunes expired entries and adds to both sets or neither. The worker (`processJob`) acquires before claiming; on refusal it does `moveToDelayed` 2-5s and throws `DelayedError`. Release is in a `finally`; a crashed worker's slot expires after 60s. The semaphore reuses the producer connection from queue.js.
+- Scheduled work uses `setInterval` in worker.js, not BullMQ repeatable jobs: sweep and purge are idempotent and safe to run on every worker replica at once (conditional UPDATEs, deterministic jobIds, deleting the same rows twice is harmless), so a repeatable job would add Redis scheduler state for no gain. Cost: with N workers each runs the sweep (more DB reads, no correctness issue).
+- Sweeper (`services/sweeper.js`): `pending`/`retry_scheduled` with `next_attempt_at` older than 60s, or `in_flight` with `locked_until` in the past, 500 per run. Stuck `in_flight` becomes `retry_scheduled` with `next_attempt_at = now` (the crashed attempt counts) or `failed`/`exhausted`. The reset is a conditional UPDATE on `status='in_flight'` and the same `locked_until`, so a delivery that finished meanwhile is not touched. Ingest and replay always set `next_attempt_at`, so no NULL case exists.
+- Idempotency (`middleware/idempotency.js`): Redis key `idem:{workspaceId}:{key}`, TTL 24h, value JSON `{fingerprint, response?}`. Fingerprint is sha256 of `METHOD path\nJSON(body)` (parsed body, so key order matters). SET NX reserves, a reservation without `response` means in progress (409 CONFLICT), a different fingerprint gives 422 IDEMPOTENCY_KEY_REUSED, a thrown error deletes the reservation, success overwrites it with `{status, body}` for replay. Redis was chosen over a DB table to avoid a migration and because TTL expiry is built in.
+- Replay quota: Redis counter `replays:{workspaceId}:{yyyymmddhh UTC}` incremented once per replay request (not per delivery created), 100 per hour, 429 QUOTA_EXCEEDED. It is checked after ownership and validation, and only on requests that reach the handler (idempotent replays of a stored response do not count).
+- Retention (`services/retention.js`): per workspace, delete events older than `retention_days` in batches of 1000 by id; deliveries and attempts go through the existing `ON DELETE CASCADE` foreign keys. Hourly from worker.js.
+- Env knobs: `RETRY_BASE_MS` (30000), `RETRY_CAP_MS` (3600000), `DESTINATION_CONCURRENCY` (5), `WORKSPACE_CONCURRENCY` (20), `SWEEPER_INTERVAL_MS` (30000), `RETENTION_INTERVAL_MS` (3600000). All are read lazily with defaults; none are in `.env.example`.
+- Delivery object (`Delivery.present`) now includes `trigger` and `replayOf` (original delivery publicId or null); `Delivery.belongsTo(Delivery, as "replayOf")` must be included wherever `present()` is called.
 
 ## Known gaps
 
 - Endpoint quota check is count-then-insert, so two concurrent creates can exceed the limit by one.
 - `events.method` is VARCHAR(10); HTTP methods longer than 10 chars (e.g. UNSUBSCRIBE) would fail insert with a 500.
 - Email is sent inline during the request; slow SMTP slows the response.
-- Phase 2 has no retries: any non-2xx or error gives `failed`/`non_retryable`. Retries and backoff, the sweeper, fairness semaphores and replay are phase 3; real-time is phase 4.
-- If Redis is down or not yet connected, ingest still returns 200 and logs `enqueue skipped`. The deliveries stay `pending` and nothing recovers them until the sweeper exists.
+- If Redis is down or not yet connected, ingest still returns 200 and logs `enqueue skipped`. The deliveries stay `pending` and the sweeper enqueues them once `next_attempt_at` is more than 60s old (so recovery takes 60-90s after Redis returns).
+- Real-time (Socket.IO) is phase 4.
+- The semaphore and idempotency code use the producer Redis connection (`enableOfflineQueue: false`). A job that starts before that connection is ready fails and is only recovered by the sweeper; replay requests fail with 500 if Redis is down.
+- Semaphore slots are keyed by job id with a fixed 60s expiry. A delivery attempt longer than 60s (timeoutMs max is 30s plus connect time) cannot outlive its slot in practice, but the slot is not renewed.
+- A job refused by the semaphore is moved to delayed 2-5s later with no limit on how many times, so a saturated destination keeps its queued jobs cycling.
+- Replaying a delivery whose destination was deleted or disabled still creates the delivery; the worker then fails it as `destination_disabled`.
+- Idempotency fingerprints use the parsed JSON body, so the same logical body with different key order counts as a different request. The 409 in-progress path has no automated test.
+- Replay quota counts requests, not deliveries created; one event replay to several destinations costs 1.
+- Retention deletes events only; Redis idempotency keys and the `audit_log` are not purged. Several worker replicas all run the sweep and purge on their own timers.
+- A manual replay of a delivery that is itself an original keeps `replay_of_id` pointing to that delivery only, not to the root of a replay chain.
 - The forwarded request goes to the destination URL exactly as stored; the original ingest path and query string are not appended.
 - SIGTERM/SIGINT graceful shutdown in worker.js is implemented but was not exercised on Windows, where signals terminate the process.
 - The claim increments `attempt_count` even when the delivery is then failed as `destination_disabled` with no attempt row.
