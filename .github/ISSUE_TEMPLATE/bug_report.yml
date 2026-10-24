@@ -1,0 +1,34 @@
+name: Bug report
+description: The API, ingest, worker or delivery pipeline behaves wrongly.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Requests sent (curl is fine) with secrets removed.
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Process
+      options:
+        - API or ingest (index.js)
+        - Worker (worker.js)
+        - Migrations
+        - Tests
+        - Unknown
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines, including requestId. Remove tokens and cookies first.
+      render: text
