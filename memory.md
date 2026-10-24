@@ -85,7 +85,9 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 
 - Endpoint quota check is count-then-insert, so two concurrent creates can exceed the limit by one.
 - `events.method` is VARCHAR(10); HTTP methods longer than 10 chars (e.g. UNSUBSCRIBE) would fail insert with a 500.
-- Email is sent inline during the request; slow SMTP slows the response.
+- Forgot-password and resend-verification do not await the mail send. The token insert is still awaited, which leaves a small timing signal that reveals whether an account exists.
+- The ingest-host check in `checkUrl` compares hostnames exactly (aliases, IP literals and CNAMEs pass). The `X-Relay-Delivery-Id` loop guard in ingest is the real protection.
+- Known audit gaps with no fix yet (see RELAY_HARDENING.md): L1 Sec-Fetch-Site CSRF hardening, L3 port oracle, L6 signature does not cover ids, L7/C12 production needs TRUST_PROXY, L8 session and token lifecycle, L11 out of scope, C13 idempotency 409 race.
 - If Redis is down or not yet connected, ingest still returns 200 and logs `enqueue skipped`. The deliveries stay `pending` and the sweeper enqueues them once `next_attempt_at` is more than 60s old (so recovery takes 60-90s after Redis returns).
 - The semaphore and idempotency code use the producer Redis connection (`enableOfflineQueue: false`). A job that starts before that connection is ready fails and is only recovered by the sweeper; replay requests fail with 500 if Redis is down.
 - Semaphore slots are keyed by job id with a fixed 60s expiry. A delivery attempt longer than 60s (timeoutMs max is 30s plus connect time) cannot outlive its slot in practice, but the slot is not renewed.

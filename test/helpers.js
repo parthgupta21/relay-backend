@@ -58,6 +58,7 @@ const signUp = async (email, { verify = true } = {}) => {
   if (verify) {
     const token = tokenFrom(await waitForEmail(email, "Verify"));
     await agent.post("/api/v1/auth/verify-email").send({ token });
+    await agent.post("/api/v1/auth/login").send({ email, password: PASSWORD });
   }
   return agent;
 };

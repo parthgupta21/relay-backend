@@ -75,7 +75,6 @@ router.post(
     const user = await User.findByPk(userId, {
       include: [{ association: "workspace" }],
     });
-    await startSession(ctx, user);
     ctx.body = me(user, user.workspace);
   },
 );
@@ -85,13 +84,18 @@ router.post(
   validate({ body: z.object({ email: emailField }) }),
   async (ctx) => {
     const user = await User.findOne({
-      where: { email: ctx.state.body.email, emailVerifiedAt: null },
+      where: {
+        email: ctx.state.body.email,
+        emailVerifiedAt: null,
+        deletedAt: null,
+      },
     });
     if (user)
-      await email.sendVerification(
-        user.email,
-        await EmailToken.issue(user.id, "verify"),
-      );
+      email
+        .sendVerification(user.email, await EmailToken.issue(user.id, "verify"))
+        .catch((err) =>
+          console.error("verification email failed", err.message),
+        );
     ctx.status = 202;
     ctx.body = CHECK_INBOX;
   },
@@ -134,10 +138,9 @@ router.post(
       where: { email: ctx.state.body.email, deletedAt: null },
     });
     if (user)
-      await email.sendPasswordReset(
-        user.email,
-        await EmailToken.issue(user.id, "reset"),
-      );
+      email
+        .sendPasswordReset(user.email, await EmailToken.issue(user.id, "reset"))
+        .catch((err) => console.error("reset email failed", err.message));
     ctx.status = 202;
     ctx.body = { message: "If the account exists, a reset link was sent." };
   },
@@ -162,6 +165,7 @@ router.post(
       return found;
     });
     await AuditLog.record("password.reset", {
+      workspaceId: (await user.getWorkspace()).id,
       actorUserId: user.id,
       ip: ctx.ip,
     });

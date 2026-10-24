@@ -4,8 +4,8 @@ const https = require("https");
 const { pinnedLookup } = require("./ssrf");
 
 const CONNECT_TIMEOUT_MS = 5000;
-const MAX_RESPONSE_BYTES = 64 * 1024;
-const DROPPED_HEADERS = new Set([
+const MAX_RESPONSE_BYTES = 64 * 1024 - 1;
+const BLOCKED_CUSTOM_HEADERS = new Set([
   "connection",
   "keep-alive",
   "transfer-encoding",
@@ -16,11 +16,19 @@ const DROPPED_HEADERS = new Set([
   "content-length",
   "cookie",
 ]);
+const DROPPED_HEADERS = new Set([...BLOCKED_CUSTOM_HEADERS, "authorization"]);
 
 const forwardedHeaders = (headers) =>
   Object.fromEntries(
     Object.entries(headers).filter(
       ([name]) => !DROPPED_HEADERS.has(name) && !name.startsWith("proxy-"),
+    ),
+  );
+
+const allowedCustomHeaders = (headers) =>
+  Object.fromEntries(
+    Object.entries(headers ?? {}).filter(
+      ([name]) => !BLOCKED_CUSTOM_HEADERS.has(name.toLowerCase()),
     ),
   );
 
@@ -38,7 +46,7 @@ const send = ({ delivery, event, destination, secret, address, url }) =>
     const timestamp = Math.floor(startedAt.getTime() / 1000);
     const headers = {
       ...forwardedHeaders(event.headers),
-      ...destination.customHeaders,
+      ...allowedCustomHeaders(destination.customHeaders),
       "X-Relay-Event-Id": event.publicId,
       "X-Relay-Delivery-Id": delivery.publicId,
       "X-Relay-Attempt": String(delivery.attemptCount),
@@ -108,4 +116,4 @@ const send = ({ delivery, event, destination, secret, address, url }) =>
     req.end(body);
   });
 
-module.exports = { send };
+module.exports = { send, BLOCKED_CUSTOM_HEADERS };

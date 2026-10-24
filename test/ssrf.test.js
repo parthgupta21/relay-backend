@@ -21,6 +21,7 @@ const BLOCKED = [
   "[fe80::1]",
   "[::ffff:127.0.0.1]",
   "[::ffff:169.254.169.254]",
+  "[::5]",
 ];
 
 for (const host of BLOCKED)
@@ -74,5 +75,28 @@ test("allowlist in production throws at load", () => {
   } finally {
     process.env.NODE_ENV = previous;
     delete require.cache[modulePath];
+  }
+});
+
+test("a RELAY ingest hostname is rejected, with or without a trailing dot", async () => {
+  const previous = process.env.HOOKS_BASE_URL;
+  process.env.HOOKS_BASE_URL = "http://hooks.test:3000";
+  try {
+    for (const url of ["http://hooks.test/x", "http://hooks.test./x"])
+      await assert.rejects(checkUrl(url), /ingest URL/, url);
+  } finally {
+    if (previous === undefined) delete process.env.HOOKS_BASE_URL;
+    else process.env.HOOKS_BASE_URL = previous;
+  }
+});
+
+test("checkUrl works when HOOKS_BASE_URL is unset", async () => {
+  const previous = process.env.HOOKS_BASE_URL;
+  delete process.env.HOOKS_BASE_URL;
+  try {
+    const { address } = await checkUrl("http://93.184.216.34/");
+    assert.strictEqual(address.address, "93.184.216.34");
+  } finally {
+    if (previous !== undefined) process.env.HOOKS_BASE_URL = previous;
   }
 });

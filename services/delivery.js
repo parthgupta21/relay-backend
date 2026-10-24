@@ -32,15 +32,23 @@ const claim = async (deliveryId) => {
   return claimed === 1;
 };
 
-const settle = (delivery, fields, transaction) =>
-  delivery.update(
-    {
-      lockedUntil: null,
-      completedAt: fields.status === "retry_scheduled" ? null : new Date(),
-      ...fields,
+const settle = async (delivery, fields, transaction) => {
+  const values = {
+    lockedUntil: null,
+    completedAt: fields.status === "retry_scheduled" ? null : new Date(),
+    ...fields,
+  };
+  const [settled] = await Delivery.update(values, {
+    where: {
+      id: delivery.id,
+      status: "in_flight",
+      attemptCount: delivery.attemptCount,
     },
-    { transaction },
-  );
+    transaction,
+  });
+  if (settled) delivery.set(values);
+  return settled === 1;
+};
 
 const isRetryable = ({ outcome, responseStatus }) =>
   outcome === "timeout" ||
@@ -79,7 +87,7 @@ const publishUpdate = ({ publicId, status, event, destination }) =>
   });
 
 const recordAttempt = async (delivery, result) => {
-  await sequelize.transaction(async (transaction) => {
+  const settled = await sequelize.transaction(async (transaction) => {
     await DeliveryAttempt.create(
       {
         deliveryId: delivery.id,
@@ -94,8 +102,9 @@ const recordAttempt = async (delivery, result) => {
       },
       { transaction },
     );
-    await settle(delivery, nextState(delivery, result), transaction);
+    return settle(delivery, nextState(delivery, result), transaction);
   });
+  if (!settled) return;
   await publishUpdate(delivery);
   if (delivery.status === "retry_scheduled")
     await enqueueDeliveries([delivery]);
@@ -127,11 +136,11 @@ const processDelivery = async (deliveryId) => {
     !destination.isActive ||
     destination.endpoint.workspace.status !== "active"
   ) {
-    await settle(delivery, {
+    const settled = await settle(delivery, {
       status: "failed",
       failureReason: "destination_disabled",
     });
-    return publishUpdate(delivery);
+    return settled && publishUpdate(delivery);
   }
 
   let checked;

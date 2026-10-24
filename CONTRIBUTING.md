@@ -4,7 +4,7 @@
 
 ```
 docker compose up -d
-cp .env.example .env
+cp .env.example .env   # set RELAY_ENCRYPTION_KEY: see README
 npm install
 npm run migrate
 npm run migrate:test

@@ -13,6 +13,23 @@ const startReceiver = async () => {
         body: Buffer.concat(chunks),
       });
       if (req.url === "/hang") return;
+      const status = req.url.match(/^\/status\/(\d+)(?:\/(\d+))?$/);
+      if (status) {
+        res.writeHead(
+          Number(status[1]),
+          status[2] ? { "Retry-After": status[2] } : {},
+        );
+        return res.end();
+      }
+      if (req.url === "/big") {
+        res.writeHead(200);
+        return res.end("a".repeat(100 * 1024));
+      }
+      if (req.url === "/slow-fail")
+        return setTimeout(() => {
+          res.writeHead(500);
+          res.end();
+        }, 300);
       if (req.url === "/fail") {
         res.writeHead(500);
         return res.end("boom");

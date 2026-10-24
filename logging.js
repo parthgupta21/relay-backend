@@ -10,18 +10,14 @@ const write =
     const requestId = (namespace.active && namespace.get("requestId")) || "-";
     const method = ctx ? ctx.method : "-";
     const url = ctx ? maskSlug(ctx.path) : "-";
-    stream(
-      `level=[${level}] requestId=${requestId} method=${method} url=${url} msg="${util.format(...args)}"`,
+    const msg = util.format(...args).replace(/\s*[\r\n]+\s*/g, " ");
+    stream.write(
+      `level=[${level}] requestId=${requestId} method=${method} url=${url} msg="${msg}"\n`,
     );
   };
 
-const out = process.stdout.write.bind(process.stdout);
-const err = process.stderr.write.bind(process.stderr);
-const toOut = (line) => out(line + "\n");
-const toErr = (line) => err(line + "\n");
-
-console.log = write("INFO", toOut);
-console.info = write("INFO", toOut);
-console.debug = write("DEBUG", toOut);
-console.warn = write("WARN", toErr);
-console.error = write("ERROR", toErr);
+console.log = write("INFO", process.stdout);
+console.info = write("INFO", process.stdout);
+console.debug = write("DEBUG", process.stdout);
+console.warn = write("WARN", process.stderr);
+console.error = write("ERROR", process.stderr);

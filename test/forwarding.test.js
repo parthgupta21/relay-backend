@@ -81,13 +81,14 @@ test("event is forwarded byte-exact and signed to every destination", async () =
   const first = await createDestination("/ok");
   const second = await createDestination("/ok2", { timeoutMs: 5000 });
   await agent.patch(`/api/v1/destinations/${second.id}`).send({
-    customHeaders: { "X-Custom": "yes" },
+    customHeaders: { "X-Custom": "yes", Authorization: "Bearer tenant" },
   });
   const body = Buffer.from([0, 255, 10, 13, 0x7b, 0x22, 0xc3, 0x28, 0x80]);
 
   const res = await ingest(body, {
     "Content-Type": "application/octet-stream",
     Cookie: "session=secret",
+    Authorization: "Bearer inbound",
     Host: "evil.example",
     "Stripe-Signature": "t=1,v1=abc",
   });
@@ -102,6 +103,10 @@ test("event is forwarded byte-exact and signed to every destination", async () =
     assert.strictEqual(received.method, "POST");
     assert.ok(received.body.equals(body));
     assert.strictEqual(received.headers.cookie, undefined);
+    assert.strictEqual(
+      received.headers.authorization,
+      received.url === "/ok2" ? "Bearer tenant" : undefined,
+    );
     assert.notStrictEqual(received.headers.host, "evil.example");
     assert.strictEqual(received.headers["stripe-signature"], "t=1,v1=abc");
     assert.strictEqual(received.headers["x-relay-event-id"], res.body.id);

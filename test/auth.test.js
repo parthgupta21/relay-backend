@@ -10,7 +10,7 @@ const {
   tokenFrom,
   newAgent,
 } = require("./helpers");
-const { Session, AuditLog } = require("../models");
+const { Session, AuditLog, User, EmailToken } = require("../models");
 
 const API = "/api/v1/auth";
 const EMAIL = "alice@example.com";
@@ -18,7 +18,7 @@ const EMAIL = "alice@example.com";
 before(resetDatabase);
 after(() => sequelize.close());
 
-test("register, verify, me, logout", async () => {
+test("register, verify, login, me, logout", async () => {
   const agent = newAgent();
   const registered = await agent
     .post(`${API}/register`)
@@ -42,8 +42,14 @@ test("register, verify, me, logout", async () => {
     maxBodyBytes: 524288,
     retentionDays: 3,
   });
-  assert.match(verified.headers["set-cookie"][0], /relay_sid=.*HttpOnly/i);
-  assert.match(verified.headers["set-cookie"][0], /SameSite=Lax/i);
+  assert.strictEqual(verified.headers["set-cookie"], undefined);
+  assert.strictEqual((await agent.get(`${API}/me`)).status, 401);
+
+  const login = await agent
+    .post(`${API}/login`)
+    .send({ email: EMAIL, password: PASSWORD });
+  assert.match(login.headers["set-cookie"][0], /relay_sid=.*HttpOnly/i);
+  assert.match(login.headers["set-cookie"][0], /SameSite=Lax/i);
 
   const me = await agent.get(`${API}/me`);
   assert.strictEqual(me.status, 200);
@@ -108,7 +114,7 @@ test("login: bad credentials give the same 401, good one sets a session", async 
     .send({ email: EMAIL, password: PASSWORD });
   assert.strictEqual(ok.status, 200);
   assert.strictEqual((await agent.get(`${API}/me`)).status, 200);
-  assert.strictEqual(await AuditLog.count({ where: { action: "login" } }), 1);
+  assert.strictEqual(await AuditLog.count({ where: { action: "login" } }), 2);
 });
 
 test("unverified user can log in, resend issues a working token", async () => {
@@ -131,6 +137,22 @@ test("unverified user can log in, resend issues a working token", async () => {
     .post(`${API}/verify-email`)
     .send({ token: tokenFrom(await waitForEmail(bob, "Verify")) });
   assert.strictEqual(verified.body.user.emailVerified, true);
+});
+
+test("resend-verification ignores soft-deleted users", async () => {
+  const carol = "carol@example.com";
+  await newAgent()
+    .post(`${API}/register`)
+    .send({ email: carol, password: PASSWORD });
+  await waitForEmail(carol, "Verify");
+  await User.update({ deletedAt: new Date() }, { where: { email: carol } });
+  const before = await EmailToken.count();
+
+  const resend = await newAgent()
+    .post(`${API}/resend-verification`)
+    .send({ email: carol });
+  assert.strictEqual(resend.status, 202);
+  assert.strictEqual(await EmailToken.count(), before);
 });
 
 test("forgot and reset change the password and kill all sessions", async () => {
@@ -174,10 +196,11 @@ test("forgot and reset change the password and kill all sessions", async () => {
     ).status,
     200,
   );
-  assert.strictEqual(
-    await AuditLog.count({ where: { action: "password.reset" } }),
-    1,
-  );
+  const resetRows = await AuditLog.findAll({
+    where: { action: "password.reset" },
+  });
+  assert.strictEqual(resetRows.length, 1);
+  assert.ok(resetRows[0].workspaceId);
 
   const replay = await newAgent()
     .post(`${API}/reset-password`)

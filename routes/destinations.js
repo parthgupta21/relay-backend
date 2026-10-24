@@ -5,6 +5,7 @@ const auth = require("../middleware/auth");
 const requireVerified = require("../middleware/requireVerified");
 const validate = require("../middleware/validate");
 const { checkUrl, SsrfError } = require("../services/ssrf");
+const { BLOCKED_CUSTOM_HEADERS } = require("../services/outbound");
 const { AppError } = require("../utils");
 
 const router = new Router();
@@ -14,7 +15,16 @@ const params = z.object({ id: z.string().min(1).max(30) });
 const fields = {
   name: z.string().trim().min(1).max(100),
   url: z.string().trim().min(1).max(2048),
-  customHeaders: z.record(z.string().min(1).max(100), z.string().max(1000)),
+  customHeaders: z.record(
+    z
+      .string()
+      .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}$/)
+      .refine((name) => !BLOCKED_CUSTOM_HEADERS.has(name.toLowerCase())),
+    z
+      .string()
+      .max(1000)
+      .regex(/^[\t\x20-\x7e]*$/),
+  ),
   timeoutMs: z.number().int().min(1000).max(30000),
 };
 
@@ -25,7 +35,7 @@ const assertUrlAllowed = (url) =>
       "VALIDATION_FAILED",
       422,
       "Destination URL is not allowed",
-      [{ path: ["url"], message: err.message }],
+      [{ path: "body.url", message: err.message }],
     );
   });
 

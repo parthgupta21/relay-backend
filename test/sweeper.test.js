@@ -57,6 +57,16 @@ test("a pending delivery with an old next_attempt_at is enqueued", async () => {
   await delivery.destroy();
 });
 
+test("a sweep does not start while the previous one is running", async () => {
+  const delivery = await makeDelivery({
+    status: "pending",
+    nextAttemptAt: new Date(Date.now() - 120000),
+  });
+  assert.deepStrictEqual(await Promise.all([sweep(), sweep()]), [1, 0]);
+  await takeJob(`d${delivery.id}-a1`);
+  await delivery.destroy();
+});
+
 test("a recent pending delivery is left alone", async () => {
   const delivery = await makeDelivery({
     status: "pending",
@@ -108,4 +118,21 @@ test("an in_flight delivery that is still locked is not touched", async () => {
   });
   assert.strictEqual(await sweep(), 0);
   await delivery.destroy();
+});
+
+test("a backlog larger than one batch is swept in id order", async () => {
+  const old = new Date(Date.now() - 120000);
+  await Delivery.bulkCreate(
+    Array.from({ length: 1100 }, () => ({
+      eventId: event.id,
+      destinationId: destination.id,
+      trigger: "manual",
+      status: "pending",
+      nextAttemptAt: old,
+    })),
+  );
+  assert.strictEqual(await sweep(), 1100);
+  assert.strictEqual(await queue.queue.getWaitingCount(), 1100);
+  await queue.queue.drain();
+  await Delivery.destroy({ where: { eventId: event.id } });
 });

@@ -8,6 +8,7 @@ const base = {
   dialect: "mysql",
   timezone: "+00:00",
   logging: false,
+  pool: { max: Number(process.env.DB_POOL_MAX) || 10 },
 };
 
 module.exports = {

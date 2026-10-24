@@ -6,7 +6,12 @@ const { AppError, publicId, randomToken } = require("../utils");
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
-const key = () => Buffer.from(process.env.RELAY_ENCRYPTION_KEY, "base64");
+const key = () => {
+  const bytes = Buffer.from(process.env.RELAY_ENCRYPTION_KEY || "", "base64");
+  if (bytes.length !== 32)
+    throw new Error("RELAY_ENCRYPTION_KEY must be 32 bytes, base64 encoded");
+  return bytes;
+};
 
 const Destination = sequelize.define(
   "Destination",
@@ -41,6 +46,8 @@ const Destination = sequelize.define(
     paranoid: true,
   },
 );
+
+Destination.assertEncryptionKey = key;
 
 Destination.generateSecret = () => `whsec_${randomToken(32)}`;
 

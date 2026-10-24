@@ -12,6 +12,14 @@ const { enqueueDeliveries } = require("../services/queue");
 const { publish } = require("../services/realtime");
 const { AppError, ipToBytes } = require("../utils");
 
+const REDACTED_HEADERS = ["authorization", "proxy-authorization", "cookie"];
+
+const tooDeep = (value, level = 0) =>
+  level > 99 ||
+  (value !== null &&
+    typeof value === "object" &&
+    Object.values(value).some((child) => tooDeep(child, level + 1)));
+
 const router = new Router();
 
 router.all("/h/:slug{/*rest}", async (ctx) => {
@@ -36,11 +44,13 @@ router.all("/h/:slug{/*rest}", async (ctx) => {
   let bodyJson = null;
   if (raw.length && contentType && /json/i.test(contentType)) {
     try {
-      bodyJson = JSON.parse(raw.toString("utf8"));
-    } catch {
-      bodyJson = null;
-    }
+      const parsed = JSON.parse(raw.toString("utf8"));
+      if (!tooDeep(parsed)) bodyJson = parsed;
+    } catch {}
   }
+  const headers = { ...ctx.headers };
+  for (const name of REDACTED_HEADERS)
+    if (name in headers) headers[name] = "[redacted]";
   const idempotencyKey = endpoint.idempotencyHeader
     ? ctx.get(endpoint.idempotencyHeader).slice(0, 255) || null
     : null;
@@ -54,7 +64,7 @@ router.all("/h/:slug{/*rest}", async (ctx) => {
             method: ctx.method,
             path: ctx.path.slice(`/h/${slug}`.length).slice(0, 2048) || "/",
             queryString: ctx.querystring || null,
-            headers: ctx.headers,
+            headers,
             contentType: contentType && contentType.slice(0, 255),
             body: raw.length ? raw : null,
             bodyJson,
@@ -65,10 +75,12 @@ router.all("/h/:slug{/*rest}", async (ctx) => {
           },
           { transaction },
         );
-        const destinations = await Destination.findAll({
-          where: { endpointId: endpoint.id, isActive: true },
-          transaction,
-        });
+        const destinations = ctx.get("x-relay-delivery-id")
+          ? []
+          : await Destination.findAll({
+              where: { endpointId: endpoint.id, isActive: true },
+              transaction,
+            });
         const deliveries = await Delivery.bulkCreate(
           destinations.map((destination) => ({
             eventId: event.id,

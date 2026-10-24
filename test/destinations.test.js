@@ -102,7 +102,7 @@ test("validation and SSRF rejection on create", async () => {
     blocked.body.error.message,
     "Destination URL is not allowed",
   );
-  assert.deepStrictEqual(blocked.body.error.details[0].path, ["url"]);
+  assert.strictEqual(blocked.body.error.details[0].path, "body.url");
   const unresolvable = await create({
     name: "x",
     url: "http://nonexistent.invalid/",
@@ -112,6 +112,22 @@ test("validation and SSRF rejection on create", async () => {
     unresolvable.body.error.message,
     "Destination URL is not allowed",
   );
+});
+
+test("customHeaders reject bad names and values", async () => {
+  const withHeaders = (customHeaders) =>
+    create({ name: "x", url: URL_OK, customHeaders });
+  for (const customHeaders of [
+    { "Bad Name": "v" },
+    { "Content-Length": "5" },
+    { Host: "evil.example" },
+    { "X-Ok": "line\r\nInjected: 1" },
+    { "X-Ok": "a".repeat(1001) },
+  ]) {
+    const res = await withHeaders(customHeaders);
+    assert.strictEqual(res.status, 422);
+    assert.strictEqual(res.body.error.code, "VALIDATION_FAILED");
+  }
 });
 
 test("SSRF re-check on patch only when url changes", async () => {

@@ -6,6 +6,8 @@ if (process.env.NODE_ENV === "production" && process.env.SSRF_ALLOWLIST)
 
 class SsrfError extends Error {}
 
+const IPV4_COMPATIBLE = ipaddr.parseCIDR("::/96");
+
 const allowlist = () =>
   (process.env.SSRF_ALLOWLIST || "")
     .split(",")
@@ -22,8 +24,13 @@ const isBlocked = (address) => {
     )
   )
     return false;
-  return ip.range() !== "unicast";
+  return (
+    ip.range() !== "unicast" ||
+    (ip.kind() === "ipv6" && ip.match(IPV4_COMPATIBLE))
+  );
 };
+
+const bareHost = (hostname) => hostname.replace(/\.$/, "");
 
 const checkUrl = async (rawUrl) => {
   let url;
@@ -39,6 +46,12 @@ const checkUrl = async (rawUrl) => {
   const port = Number(url.port);
   if (url.port && port !== 80 && port !== 443 && port < 1024)
     throw new SsrfError("Port not allowed");
+  if (
+    process.env.HOOKS_BASE_URL &&
+    bareHost(url.hostname) ===
+      bareHost(new URL(process.env.HOOKS_BASE_URL).hostname)
+  )
+    throw new SsrfError("Destination cannot be a RELAY ingest URL");
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const addresses = await dns.lookup(host, { all: true }).catch(() => {
     throw new SsrfError("Host could not be resolved");

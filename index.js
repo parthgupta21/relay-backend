@@ -13,16 +13,21 @@ const deliveryRoutes = require("./routes/deliveries");
 const ingestRoutes = require("./routes/ingest");
 const namespace = require("./namespace");
 const sequelize = require("./database");
+const { Destination } = require("./models");
+const queue = require("./services/queue");
 const errorHandler = require("./middleware/errorHandler");
 const realtime = require("./services/realtime");
-const { AppError } = require("./utils");
 
 const app = new Koa();
 app.proxy = process.env.TRUST_PROXY === "true";
+app.maxIpsCount = 1;
 
 app.use((ctx, next) =>
   namespace.runAndReturn(() => {
-    const requestId = ctx.get("X-Request-Id") || crypto.randomUUID();
+    const header = ctx.get("X-Request-Id");
+    const requestId = /^[\w-]{1,64}$/.test(header)
+      ? header
+      : crypto.randomUUID();
     namespace.set("requestId", requestId);
     namespace.set("ctx", ctx);
     ctx.set("X-Request-Id", requestId);
@@ -36,12 +41,7 @@ health.get("/healthz", (ctx) => {
   ctx.body = { ok: true };
 });
 health.get("/readyz", async (ctx) => {
-  try {
-    await sequelize.authenticate();
-  } catch (err) {
-    console.error("readyz failed", err.message);
-    throw new AppError("SERVICE_UNAVAILABLE", 503, "Database unavailable");
-  }
+  await sequelize.authenticate();
   ctx.body = { ok: true };
 });
 app.use(health.routes());
@@ -65,11 +65,25 @@ if (role !== "ingest") {
 if (role !== "app") app.use(ingestRoutes.routes());
 
 if (require.main === module) {
+  Destination.assertEncryptionKey();
   const port = process.env.PORT || 3000;
   const server = app.listen(port, () =>
     console.info(`relay listening on ${port} role=${role}`),
   );
-  if (role !== "ingest") realtime.attach(server);
+  const sockets = role !== "ingest" ? realtime.attach(server) : null;
+  process.once("SIGTERM", () => {
+    setTimeout(() => process.exit(1), 10000).unref();
+    server.close(() =>
+      queue
+        .close()
+        .then(() => sequelize.close())
+        .catch((err) => {
+          console.error("shutdown failed", err.message);
+          process.exit(1);
+        }),
+    );
+    sockets?.close();
+  });
 }
 
 module.exports = app;

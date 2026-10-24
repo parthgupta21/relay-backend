@@ -119,6 +119,21 @@ test("a missing or oversized Idempotency-Key is rejected", async () => {
     const res = await replay(alice, deliveries[0].id, key);
     assert.strictEqual(res.status, 422);
     assert.strictEqual(res.body.error.code, "VALIDATION_FAILED");
+    assert.strictEqual(
+      res.body.error.details[0].path,
+      "headers.idempotency-key",
+    );
+  }
+});
+
+test("a replay is refused with 503 while redis is not ready", async () => {
+  queue.connection.status = "reconnecting";
+  try {
+    const res = await replay(alice, deliveries[0].id, "k-redis-down");
+    assert.strictEqual(res.status, 503);
+    assert.strictEqual(res.body.error.code, "SERVICE_UNAVAILABLE");
+  } finally {
+    queue.connection.status = "ready";
   }
 });
 

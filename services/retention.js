@@ -17,17 +17,11 @@ const purgeExpired = async () => {
         [Op.lt]: new Date(Date.now() - workspace.retentionDays * DAY_MS),
       },
     };
-    for (;;) {
-      const events = await Event.findAll({
-        where,
-        attributes: ["id"],
-        limit: BATCH,
-      });
-      if (!events.length) break;
-      purged += await Event.destroy({
-        where: { id: events.map(({ id }) => id) },
-      });
-    }
+    let destroyed;
+    do {
+      destroyed = await Event.destroy({ where, limit: BATCH });
+      purged += destroyed;
+    } while (destroyed === BATCH);
   }
   return purged;
 };

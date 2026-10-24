@@ -228,7 +228,7 @@ Prerequisites: Node.js 22, Docker.
 
 ```bash
 docker compose up -d      # MySQL on 3307, Redis on 6379, Mailpit SMTP 1025, UI http://localhost:8025
-cp .env.example .env
+cp .env.example .env     # then set RELAY_ENCRYPTION_KEY, see below
 npm install
 npm run migrate           # dev database "relay"
 npm run migrate:test      # test database "relay_test"
@@ -255,25 +255,25 @@ Verification and reset emails appear in Mailpit at `http://localhost:8025`.
 
 Settings in `.env.example`:
 
-| Variable                     | Default in `.env.example`      | Purpose                                                                                                               |
-| ---------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                   | `development`                  | Environment. `production` makes the session cookie `Secure` and forbids `SSRF_ALLOWLIST`.                             |
-| `ROLE`                       | `all`                          | `ingest`, `app` or `all`.                                                                                             |
-| `PORT`                       | `3000`                         | HTTP port.                                                                                                            |
-| `TRUST_PROXY`                | `false`                        | Set `true` behind a trusted proxy so `ctx.ip` uses forwarded headers.                                                 |
-| `APP_BASE_URL`               | `http://localhost:5173`        | Web app origin. Used for the CSRF Origin check, Socket.IO origin check and email links.                               |
-| `HOOKS_BASE_URL`             | `http://localhost:3000`        | Base URL of the ingest host.                                                                                          |
-| `DB_HOST`, `DB_PORT`         | `127.0.0.1`, `3307`            | MySQL address.                                                                                                        |
-| `DB_NAME`, `DB_NAME_TEST`    | `relay`, `relay_test`          | Dev and test databases.                                                                                               |
-| `DB_USERNAME`, `DB_PASSWORD` | `relay`, `relay`               | MySQL credentials.                                                                                                    |
-| `SMTP_HOST`, `SMTP_PORT`     | `127.0.0.1`, `1025`            | Mail server. Mailpit locally.                                                                                         |
-| `MAIL_FROM`                  | `RELAY <no-reply@relay.local>` | Sender address.                                                                                                       |
-| `MAILPIT_API`                | `http://localhost:8025/api/v1` | Used by tests to read mail.                                                                                           |
-| `PLAN_DEFAULTS`              | JSON, see below                | Limits given to a new workspace.                                                                                      |
-| `RELAY_ENCRYPTION_KEY`       | sample key                     | 32-byte base64 key for signing secrets. Replace it outside local development.                                         |
-| `SSRF_ALLOWLIST`             | `127.0.0.1/32`                 | CIDRs allowed past the SSRF check. Dev and test only. The app throws at load if it is set with `NODE_ENV=production`. |
-| `REDIS_URL`                  | `redis://127.0.0.1:6379`       | Redis for BullMQ, semaphores, idempotency and pub/sub.                                                                |
-| `DELIVERY_CONCURRENCY`       | `50`                           | Jobs one worker runs at once.                                                                                         |
+| Variable                     | Default in `.env.example`      | Purpose                                                                                                                                                                                   |
+| ---------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                   | `development`                  | Environment. `production` makes the session cookie `Secure` and forbids `SSRF_ALLOWLIST`.                                                                                                 |
+| `ROLE`                       | `all`                          | `ingest`, `app` or `all`.                                                                                                                                                                 |
+| `PORT`                       | `3000`                         | HTTP port.                                                                                                                                                                                |
+| `TRUST_PROXY`                | `false`                        | Set `true` behind a trusted proxy so `ctx.ip` uses forwarded headers.                                                                                                                     |
+| `APP_BASE_URL`               | `http://localhost:5173`        | Web app origin. Used for the CSRF Origin check, Socket.IO origin check and email links.                                                                                                   |
+| `HOOKS_BASE_URL`             | `http://localhost:3000`        | Base URL of the ingest host.                                                                                                                                                              |
+| `DB_HOST`, `DB_PORT`         | `127.0.0.1`, `3307`            | MySQL address.                                                                                                                                                                            |
+| `DB_NAME`, `DB_NAME_TEST`    | `relay`, `relay_test`          | Dev and test databases.                                                                                                                                                                   |
+| `DB_USERNAME`, `DB_PASSWORD` | `relay`, `relay`               | MySQL credentials.                                                                                                                                                                        |
+| `SMTP_HOST`, `SMTP_PORT`     | `127.0.0.1`, `1025`            | Mail server. Mailpit locally.                                                                                                                                                             |
+| `MAIL_FROM`                  | `RELAY <no-reply@relay.local>` | Sender address.                                                                                                                                                                           |
+| `MAILPIT_API`                | `http://localhost:8025/api/v1` | Used by tests to read mail.                                                                                                                                                               |
+| `PLAN_DEFAULTS`              | JSON, see below                | Limits given to a new workspace.                                                                                                                                                          |
+| `RELAY_ENCRYPTION_KEY`       | none                           | Required. 32-byte base64 key for signing secrets. The API and worker refuse to start without it. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. |
+| `SSRF_ALLOWLIST`             | `127.0.0.1/32`                 | CIDRs allowed past the SSRF check. Dev and test only. The app throws at load if it is set with `NODE_ENV=production`.                                                                     |
+| `REDIS_URL`                  | `redis://127.0.0.1:6379`       | Redis for BullMQ, semaphores, idempotency and pub/sub.                                                                                                                                    |
+| `DELIVERY_CONCURRENCY`       | `50`                           | Jobs one worker runs at once.                                                                                                                                                             |
 
 Default `PLAN_DEFAULTS`:
 
@@ -445,7 +445,7 @@ Retry rules, from `services/delivery.js` and `utils/backoff.js`:
 - A retry is a delayed BullMQ job `d{id}-a{n+1}`, added after the database commit.
 - Response bodies are read up to 64 KB, then the socket is destroyed.
 - Redirects are not followed. `3xx` is treated as non-retryable.
-- The sweeper runs every 30 s and handles up to 500 deliveries per run:
+- The sweeper runs every 30 s and walks every due delivery in batches of 500:
   - `pending` or `retry_scheduled` with `next_attempt_at` older than 60 s are enqueued again.
   - `in_flight` with `locked_until` in the past becomes `retry_scheduled` (the crashed attempt counts) or `failed` with `exhausted`.
   - The reset is a conditional `UPDATE`, so a delivery that finished in the meantime is untouched.
@@ -461,9 +461,10 @@ Known gaps are tracked in [`memory.md`](memory.md), including the endpoint quota
 - **Passwords.** argon2, minimum 10 characters. Register and resend answer the same way whether or not an account exists.
 - **CSRF.** `POST`, `PATCH` and `DELETE` on `/api/v1` are rejected with `403` if `Origin` is present and not `APP_BASE_URL`. Socket.IO applies the same origin check.
 - **Tenant isolation.** Reads go through workspace-scoped queries. A record you do not own returns `404`, never `403`.
-- **SSRF.** Destination URLs are checked on create. The worker re-resolves and checks again, then connects to the pinned address so DNS cannot change between check and send. Only `unicast` ranges pass. `SSRF_ALLOWLIST` is refused in production.
+- **SSRF.** Destination URLs are checked on create. The worker re-resolves and checks again, then connects to the pinned address so DNS cannot change between check and send. Only `unicast` ranges pass, `::/96` is blocked, and a destination cannot point at the RELAY ingest host. `SSRF_ALLOWLIST` is refused in production.
 - **Signing secrets.** Generated as `whsec_` plus 32 random bytes. Encrypted with AES-256-GCM. Returned only by create and rotate.
-- **Forwarded headers.** Hop-by-hop headers, `host`, `content-length` and `cookie` are dropped before forwarding.
+- **Forwarded headers.** Hop-by-hop headers, `host`, `content-length`, `cookie`, `authorization` and `proxy-*` are dropped before forwarding. Tenants add auth through destination `customHeaders`, which reject invalid names and the hop-by-hop, `host` and `content-length` headers.
+- **Stored headers.** `authorization`, `proxy-authorization` and `cookie` are stored as `[redacted]`. Events stored before this change keep their values until retention deletes them.
 - **Errors.** Unexpected errors become a generic `500 INTERNAL`. Details stay in the logs with the request ID.
 - **Logs.** Ingest slugs are masked to the first 6 characters.
 - **Container.** The image runs as the non-root `node` user.

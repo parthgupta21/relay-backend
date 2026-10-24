@@ -10,6 +10,18 @@ module.exports = async (ctx, next) => {
       "VALIDATION_FAILED",
       422,
       "Idempotency-Key header is required and must be at most 255 characters",
+      [
+        {
+          path: "headers.idempotency-key",
+          message: "Required, at most 255 characters",
+        },
+      ],
+    );
+  if (connection.status !== "ready")
+    throw new AppError(
+      "SERVICE_UNAVAILABLE",
+      503,
+      "Idempotency store unavailable",
     );
   const redisKey = `idem:${ctx.state.workspace.id}:${key}`;
   const fingerprint = sha256(
