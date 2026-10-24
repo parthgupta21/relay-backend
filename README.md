@@ -81,70 +81,48 @@ RELAY sits in front of your server. Senders post to a stable RELAY URL and get a
 
 ## Architecture
 
-### Components
+### How a webhook flows through RELAY
 
 ```mermaid
-flowchart LR
-  sender["Sender (Stripe, GitHub, Shopify)"]
-  client["RELAY web app"]
-  dest["Your destination servers"]
+flowchart TD
+  A(["Sender posts to /h/:slug"]) --> B{"Endpoint and workspace active,<br/>body within plan size limit?"}
+  B -- No --> REJ["404 unknown endpoint<br/>or 413 payload too large"]
+  B -- Yes --> C["1. One MySQL transaction:<br/>save event, plus one pending<br/>delivery per active destination"]
+  C -- "Idempotency key seen before" --> DUP["200, duplicate: true<br/>nothing new is stored"]
+  C --> D["2. Queue one job per delivery<br/>(BullMQ on Redis)"]
+  D --> E(["3. 200 with the event id"])
+  D -. "Redis down" .-> SW["Sweeper, every 30 s, re-queues<br/>deliveries missed for 60 s"]
+  D --> F{"4. Worker: free slot for this<br/>destination and workspace?"}
+  SW -.-> F
+  F -- "No: wait 2 to 5 s" --> F
+  F -- Yes --> G{"5. Destination still active<br/>and URL passes SSRF check?"}
+  G -- No --> FAIL["failed"]
+  G -- Yes --> H["6. Signed HTTP request<br/>header X-Relay-Signature"]
+  H --> I{"7. Response"}
+  I -- 2xx --> OK["succeeded"]
+  I -- "Other 3xx or 4xx" --> FAIL
+  I -- "Timeout, network error,<br/>408, 429 or 5xx" --> J{"Attempts left?"}
+  J -- No --> FAIL
+  J -- Yes --> RS["retry_scheduled<br/>exponential backoff with jitter,<br/>Retry-After honoured"]
+  RS --> F
 
-  subgraph relay["RELAY"]
-    api["API and ingest (index.js, Koa)"]
-    worker["Worker (worker.js, BullMQ)"]
-    mysql[("MySQL")]
-    redis[("Redis")]
-  end
-
-  sender -->|"POST /h/:slug"| api
-  client -->|"/api/v1 and /socket.io"| api
-  api -->|"1. store event + pending deliveries"| mysql
-  api -->|"2. enqueue jobs"| redis
-  redis -->|"3. jobs"| worker
-  worker -->|"claim, record attempts"| mysql
-  worker -->|"4. signed HTTP request"| dest
-  worker -->|"sweep and purge timers"| mysql
-  worker -->|"publish delivery.updated"| redis
-  api -->|"subscribe, push to browser"| redis
+  classDef good stroke:#2e7d32,stroke-width:2px
+  classDef bad stroke:#c62828,stroke-width:2px
+  class OK,E good
+  class FAIL,REJ bad
 ```
 
-`ROLE=ingest|app|all` (default `all`) chooses what one API process mounts. `ingest` mounts only `/h/*`. `app` mounts only `/api/v1` and Socket.IO. The worker is always its own process.
+1. Ingest stores the raw event and creates one `pending` delivery per active destination, in one transaction (`routes/ingest.js`).
+2. After the commit, each delivery is queued as a BullMQ job. If Redis is down, the sender still gets `200`. The sweeper queues the delivery later.
+3. The sender gets `200` with the event id. Delivery happens after this, so a slow destination never slows the sender.
+4. The worker takes a concurrency slot for the destination and the workspace. If none is free, the job waits 2 to 5 seconds and tries again (`services/semaphore.js`).
+5. The worker marks the delivery `in_flight`, then checks that the destination is still active and that its URL resolves to a public address. Otherwise the delivery fails with `destination_disabled` or `ssrf_blocked`.
+6. The request is signed with HMAC-SHA256 (`services/outbound.js`).
+7. A 2xx response means `succeeded`. A retryable error schedules another attempt until `maxAttempts` runs out. Any other response fails at once. The attempt and the new status are saved in one transaction (`services/delivery.js`).
 
-### One event, end to end
+Every status change is pushed to the web app as a `delivery.updated` Socket.IO event.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant S as Sender
-  participant A as API (ingest)
-  participant DB as MySQL
-  participant Q as Redis (BullMQ)
-  participant W as Worker
-  participant D as Destination
-
-  S->>A: POST /h/:slug (raw body)
-  A->>DB: BEGIN, insert event, insert pending deliveries, COMMIT
-  A->>Q: addBulk jobs d{id}-a1
-  A-->>S: 200 { id, duplicate: false }
-  Q->>W: job d{id}-a1
-  W->>Q: acquire destination and workspace slots
-  W->>DB: conditional UPDATE, pending to in_flight
-  W->>W: re-run SSRF check, pin resolved address
-  W->>D: signed request (X-Relay-Signature)
-  D-->>W: HTTP response
-  W->>DB: insert attempt, update delivery (one transaction)
-  alt 2xx
-    W->>DB: status succeeded
-  else retryable and attempts left
-    W->>DB: status retry_scheduled
-    W->>Q: delayed job d{id}-a{n+1}
-  else not retryable or out of attempts
-    W->>DB: status failed with failure_reason
-  end
-  W-->>Q: publish delivery.updated
-```
-
-The event and its deliveries are committed before the response is sent. If the enqueue fails, the deliveries stay `pending` and the sweeper picks them up.
+`ROLE=ingest|app|all` (default `all`) chooses what one API process mounts. `ingest` mounts only `/h/*`. `app` mounts only `/api/v1` and Socket.IO. The worker always runs as its own process.
 
 ### Delivery states
 
