@@ -39,6 +39,7 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
   - [x] D: manual replay with Idempotency-Key
   - [x] E: retention purge
 - [ ] Phase 4: realtime (Socket.IO), API tokens, usage, rate limits, quotas
+  - [x] Stage A: realtime (Socket.IO)
 - [ ] Phase 5: analytics, account deletion, admin
 - [ ] Phase 6: hardening, deploy, observability
 
@@ -75,13 +76,17 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - Env knobs: `RETRY_BASE_MS` (30000), `RETRY_CAP_MS` (3600000), `DESTINATION_CONCURRENCY` (5), `WORKSPACE_CONCURRENCY` (20), `SWEEPER_INTERVAL_MS` (30000), `RETENTION_INTERVAL_MS` (3600000). All are read lazily with defaults; none are in `.env.example`.
 - Delivery object (`Delivery.present`) now includes `trigger` and `replayOf` (original delivery publicId or null); `Delivery.belongsTo(Delivery, as "replayOf")` must be included wherever `present()` is called.
 
+- Realtime: producers publish JSON to one Redis pub/sub channel (`realtime`, `test:realtime` under NODE_ENV=test) on the producer connection; each socket process has its own subscriber and emits to the room `ws:<workspace id>`. A plain pub/sub channel is used instead of @socket.io/redis-adapter because only server-to-room broadcast is needed, not cross-node socket management.
+- Realtime auth: the handshake reads `relay_sid` from the Cookie header and resolves it with `Session.findActive`; no cookie or no active session gives `UNAUTHENTICATED`, and a DB error gives `SERVICE_UNAVAILABLE`. A present Origin that differs from APP_BASE_URL's origin is refused (same check as originCheck).
+- Realtime payloads carry public ids only: `event.created` {endpointId, eventId}, `delivery.updated` {deliveryId, eventId, status}. The workspace id is in the Redis message for routing but never emitted.
+- Sockets attach in every role except `ingest`.
+
 ## Known gaps
 
 - Endpoint quota check is count-then-insert, so two concurrent creates can exceed the limit by one.
 - `events.method` is VARCHAR(10); HTTP methods longer than 10 chars (e.g. UNSUBSCRIBE) would fail insert with a 500.
 - Email is sent inline during the request; slow SMTP slows the response.
 - If Redis is down or not yet connected, ingest still returns 200 and logs `enqueue skipped`. The deliveries stay `pending` and the sweeper enqueues them once `next_attempt_at` is more than 60s old (so recovery takes 60-90s after Redis returns).
-- Real-time (Socket.IO) is phase 4.
 - The semaphore and idempotency code use the producer Redis connection (`enableOfflineQueue: false`). A job that starts before that connection is ready fails and is only recovered by the sweeper; replay requests fail with 500 if Redis is down.
 - Semaphore slots are keyed by job id with a fixed 60s expiry. A delivery attempt longer than 60s (timeoutMs max is 30s plus connect time) cannot outlive its slot in practice, but the slot is not renewed.
 - A job refused by the semaphore is moved to delayed 2-5s later with no limit on how many times, so a saturated destination keeps its queued jobs cycling.
@@ -93,3 +98,5 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - The forwarded request goes to the destination URL exactly as stored; the original ingest path and query string are not appended.
 - SIGTERM/SIGINT graceful shutdown in worker.js is implemented but was not exercised on Windows, where signals terminate the process.
 - The claim increments `attempt_count` even when the delivery is then failed as `destination_disabled` with no attempt row.
+- Realtime: the sweeper and replay do not publish yet. An open socket is not closed on logout or session expiry. Publishes are dropped while Redis is down (warning logged); the UI should fall back to polling.
+- Realtime: more than one app instance needs sticky sessions (polling transport); the SPA must proxy /socket.io with ws enabled.

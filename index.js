@@ -14,6 +14,7 @@ const ingestRoutes = require("./routes/ingest");
 const namespace = require("./namespace");
 const sequelize = require("./database");
 const errorHandler = require("./middleware/errorHandler");
+const realtime = require("./services/realtime");
 const { AppError } = require("./utils");
 
 const app = new Koa();
@@ -65,9 +66,10 @@ if (role !== "app") app.use(ingestRoutes.routes());
 
 if (require.main === module) {
   const port = process.env.PORT || 3000;
-  app.listen(port, () =>
+  const server = app.listen(port, () =>
     console.info(`relay listening on ${port} role=${role}`),
   );
+  if (role !== "ingest") realtime.attach(server);
 }
 
 module.exports = app;

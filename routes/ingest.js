@@ -9,6 +9,7 @@ const {
   Delivery,
 } = require("../models");
 const { enqueueDeliveries } = require("../services/queue");
+const { publish } = require("../services/realtime");
 const { AppError, ipToBytes } = require("../utils");
 
 const router = new Router();
@@ -81,6 +82,10 @@ router.all("/h/:slug{/*rest}", async (ctx) => {
         return { event, deliveries };
       },
     );
+    await publish(endpoint.workspace.id, "event.created", {
+      endpointId: endpoint.publicId,
+      eventId: event.publicId,
+    });
     if (deliveries.length) await enqueueDeliveries(deliveries);
     ctx.body = { id: event.publicId, duplicate: false };
   } catch (err) {

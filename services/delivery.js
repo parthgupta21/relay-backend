@@ -12,6 +12,7 @@ const {
 const { checkUrl, SsrfError } = require("./ssrf");
 const { send } = require("./outbound");
 const { enqueueDeliveries } = require("./queue");
+const { publish } = require("./realtime");
 const { acquire, release } = require("./semaphore");
 const { retryDelay, parseRetryAfter } = require("../utils/backoff");
 
@@ -70,6 +71,13 @@ const nextState = (delivery, result) => {
   };
 };
 
+const publishUpdate = ({ publicId, status, event, destination }) =>
+  publish(destination.endpoint.workspace.id, "delivery.updated", {
+    deliveryId: publicId,
+    eventId: event.publicId,
+    status,
+  });
+
 const recordAttempt = async (delivery, result) => {
   await sequelize.transaction(async (transaction) => {
     await DeliveryAttempt.create(
@@ -88,6 +96,7 @@ const recordAttempt = async (delivery, result) => {
     );
     await settle(delivery, nextState(delivery, result), transaction);
   });
+  await publishUpdate(delivery);
   if (delivery.status === "retry_scheduled")
     await enqueueDeliveries([delivery]);
 };
@@ -112,15 +121,18 @@ const processDelivery = async (deliveryId) => {
     ],
   });
   const { event, destination } = delivery;
+  await publishUpdate(delivery);
   if (
     destination.deletedAt ||
     !destination.isActive ||
     destination.endpoint.workspace.status !== "active"
-  )
-    return settle(delivery, {
+  ) {
+    await settle(delivery, {
       status: "failed",
       failureReason: "destination_disabled",
     });
+    return publishUpdate(delivery);
+  }
 
   let checked;
   try {
