@@ -11,7 +11,6 @@ const { AppError } = require("../utils");
 const router = new Router();
 router.use(auth.withApiToken);
 
-const params = z.object({ id: z.string().min(1).max(30) });
 const fields = {
   name: z.string().trim().min(1).max(100),
   url: z.string().trim().min(1).max(2048),
@@ -39,23 +38,27 @@ const assertUrlAllowed = (url) =>
     );
   });
 
-router.get("/endpoints/:id/destinations", validate({ params }), async (ctx) => {
-  const endpoint = await Endpoint.getOwned(
-    ctx.state.workspace.id,
-    ctx.state.params.id,
-  );
-  const destinations = await Destination.findAll({
-    where: { endpointId: endpoint.id },
-    order: [["id", "ASC"]],
-  });
-  ctx.body = destinations.map((destination) => destination.present());
-});
+router.get(
+  "/endpoints/:id/destinations",
+  validate({ params: validate.idParams }),
+  async (ctx) => {
+    const endpoint = await Endpoint.getOwned(
+      ctx.state.workspace.id,
+      ctx.state.params.id,
+    );
+    const destinations = await Destination.findAll({
+      where: { endpointId: endpoint.id },
+      order: [["id", "ASC"]],
+    });
+    ctx.body = destinations.map((destination) => destination.present());
+  },
+);
 
 router.post(
   "/endpoints/:id/destinations",
   requireVerified,
   validate({
-    params,
+    params: validate.idParams,
     body: z.object({
       name: fields.name,
       url: fields.url,
@@ -86,7 +89,7 @@ router.post(
 router.patch(
   "/destinations/:id",
   validate({
-    params,
+    params: validate.idParams,
     body: z.object({
       name: fields.name.optional(),
       url: fields.url.optional(),
@@ -107,18 +110,22 @@ router.patch(
   },
 );
 
-router.delete("/destinations/:id", validate({ params }), async (ctx) => {
-  const destination = await Destination.getOwned(
-    ctx.state.workspace.id,
-    ctx.state.params.id,
-  );
-  await destination.destroy();
-  ctx.status = 204;
-});
+router.delete(
+  "/destinations/:id",
+  validate({ params: validate.idParams }),
+  async (ctx) => {
+    const destination = await Destination.getOwned(
+      ctx.state.workspace.id,
+      ctx.state.params.id,
+    );
+    await destination.destroy();
+    ctx.status = 204;
+  },
+);
 
 router.post(
   "/destinations/:id/rotate-secret",
-  validate({ params }),
+  validate({ params: validate.idParams }),
   async (ctx) => {
     const destination = await Destination.getOwned(
       ctx.state.workspace.id,

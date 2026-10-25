@@ -1,6 +1,7 @@
+const { z } = require("zod");
 const { AppError } = require("../utils");
 
-module.exports = (schemas) => async (ctx, next) => {
+const validate = (schemas) => (ctx, next) => {
   const input = {
     params: ctx.params,
     query: ctx.query,
@@ -22,3 +23,7 @@ module.exports = (schemas) => async (ctx, next) => {
     throw new AppError("VALIDATION_FAILED", 422, "Validation failed", issues);
   return next();
 };
+
+validate.idParams = z.object({ id: z.string().min(1).max(30) });
+
+module.exports = validate;

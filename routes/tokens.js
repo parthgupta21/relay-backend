@@ -9,8 +9,6 @@ const { AppError } = require("../utils");
 const router = new Router({ prefix: "/tokens" });
 router.use(auth);
 
-const params = z.object({ id: z.string().min(1).max(30) });
-
 const audit = (ctx, action, apiToken) =>
   AuditLog.record(action, {
     workspaceId: ctx.state.workspace.id,
@@ -60,7 +58,7 @@ router.post(
   },
 );
 
-router.delete("/:id", validate({ params }), async (ctx) => {
+router.delete("/:id", validate({ params: validate.idParams }), async (ctx) => {
   const apiToken = await ApiToken.getOwned(
     ctx.state.workspace.id,
     ctx.state.params.id,

@@ -47,8 +47,13 @@ const Delivery = sequelize.define(
   { tableName: "deliveries", underscored: true },
 );
 
+Delivery.PRESENT_INCLUDE = [
+  { association: "destination", paranoid: false },
+  { association: "replayOf" },
+];
+
 Delivery.getOwned = async (workspaceId, id) => {
-  const { Event, Endpoint, Destination, DeliveryAttempt } = sequelize.models;
+  const { Event, Endpoint, DeliveryAttempt } = sequelize.models;
   const delivery = await Delivery.findOne({
     where: { publicId: id },
     include: [
@@ -64,8 +69,7 @@ Delivery.getOwned = async (workspaceId, id) => {
           },
         ],
       },
-      { model: Destination, as: "destination", paranoid: false },
-      { model: Delivery, as: "replayOf" },
+      ...Delivery.PRESENT_INCLUDE,
       { model: DeliveryAttempt, as: "attempts" },
     ],
     order: [[{ model: DeliveryAttempt, as: "attempts" }, "attemptNo", "ASC"]],

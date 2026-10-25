@@ -12,8 +12,6 @@ const { AppError, bytesToIp } = require("../utils");
 const router = new Router();
 router.use(auth.withApiToken);
 
-const params = z.object({ id: z.string().min(1).max(30) });
-
 const decodeCursor = (value) => {
   try {
     const { receivedAt, id } = JSON.parse(
@@ -48,7 +46,7 @@ const listQuery = z.object({
 
 router.get(
   "/endpoints/:id/events",
-  validate({ params, query: listQuery }),
+  validate({ params: validate.idParams, query: listQuery }),
   async (ctx) => {
     const endpoint = await Endpoint.getOwned(
       ctx.state.workspace.id,
@@ -96,45 +94,50 @@ router.get(
   },
 );
 
-router.get("/events/:id", validate({ params }), async (ctx) => {
-  const event = await Event.getOwned(
-    ctx.state.workspace.id,
-    ctx.state.params.id,
-  );
-  ctx.body = {
-    id: event.publicId,
-    endpointId: event.endpoint.publicId,
-    method: event.method,
-    path: event.path,
-    queryString: event.queryString,
-    headers: event.headers,
-    contentType: event.contentType,
-    bodySize: event.bodySize,
-    sourceIp: bytesToIp(event.sourceIp),
-    receivedAt: event.receivedAt,
-    idempotencyKey: event.idempotencyKey,
-    body: event.body ? event.body.toString("base64") : null,
-    bodyJson: event.bodyJson,
-    deliveries: (
-      await Delivery.findAll({
-        where: { eventId: event.id },
-        include: [
-          { model: Destination, as: "destination", paranoid: false },
-          { model: Delivery, as: "replayOf" },
-        ],
-        order: [["id", "ASC"]],
-      })
-    ).map((delivery) => delivery.present()),
-  };
-});
+router.get(
+  "/events/:id",
+  validate({ params: validate.idParams }),
+  async (ctx) => {
+    const event = await Event.getOwned(
+      ctx.state.workspace.id,
+      ctx.state.params.id,
+    );
+    ctx.body = {
+      id: event.publicId,
+      endpointId: event.endpoint.publicId,
+      method: event.method,
+      path: event.path,
+      queryString: event.queryString,
+      headers: event.headers,
+      contentType: event.contentType,
+      bodySize: event.bodySize,
+      sourceIp: bytesToIp(event.sourceIp),
+      receivedAt: event.receivedAt,
+      idempotencyKey: event.idempotencyKey,
+      body: event.body ? event.body.toString("base64") : null,
+      bodyJson: event.bodyJson,
+      deliveries: (
+        await Delivery.findAll({
+          where: { eventId: event.id },
+          include: Delivery.PRESENT_INCLUDE,
+          order: [["id", "ASC"]],
+        })
+      ).map((delivery) => delivery.present()),
+    };
+  },
+);
 
 router.post(
   "/events/:id/replay",
   requireVerified,
   validate({
-    params,
+    params: validate.idParams,
     body: z.object({
-      destinationIds: z.array(z.string().min(1).max(30)).max(100).optional(),
+      destinationIds: z
+        .array(z.string().min(1).max(30))
+        .min(1)
+        .max(100)
+        .optional(),
     }),
   }),
   idempotency,
@@ -174,18 +177,22 @@ router.post(
   },
 );
 
-router.get("/events/:id/body", validate({ params }), async (ctx) => {
-  const event = await Event.getOwned(
-    ctx.state.workspace.id,
-    ctx.state.params.id,
-  );
-  ctx.set("Content-Type", event.contentType || "application/octet-stream");
-  ctx.set(
-    "Content-Disposition",
-    `attachment; filename="${event.publicId}.bin"`,
-  );
-  ctx.set("X-Content-Type-Options", "nosniff");
-  ctx.body = event.body || Buffer.alloc(0);
-});
+router.get(
+  "/events/:id/body",
+  validate({ params: validate.idParams }),
+  async (ctx) => {
+    const event = await Event.getOwned(
+      ctx.state.workspace.id,
+      ctx.state.params.id,
+    );
+    ctx.set("Content-Type", event.contentType || "application/octet-stream");
+    ctx.set(
+      "Content-Disposition",
+      `attachment; filename="${event.publicId}.bin"`,
+    );
+    ctx.set("X-Content-Type-Options", "nosniff");
+    ctx.body = event.body || Buffer.alloc(0);
+  },
+);
 
 module.exports = router;

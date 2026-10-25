@@ -199,6 +199,15 @@ test("event replay can target chosen destinations and rejects foreign ones", asy
   assert.strictEqual(rejected.body.error.code, "VALIDATION_FAILED");
 });
 
+test("event replay rejects an empty destinationIds list", async () => {
+  const response = await alice
+    .post(`/api/v1/events/${eventId}/replay`)
+    .set("Idempotency-Key", "k-empty-dst")
+    .send({ destinationIds: [] });
+  assert.strictEqual(response.status, 422);
+  assert.strictEqual(response.body.error.code, "VALIDATION_FAILED");
+});
+
 test("more than 100 replays an hour gets 429", async () => {
   const workspace = await Workspace.findOne({ order: [["id", "ASC"]] });
   const hour = new Date().toISOString().slice(0, 13).replace(/\D/g, "");

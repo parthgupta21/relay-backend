@@ -1,4 +1,4 @@
-const { Delivery, Destination } = require("../models");
+const { Delivery } = require("../models");
 const { connection, enqueueDeliveries } = require("./queue");
 const { AppError } = require("../utils");
 
@@ -35,10 +35,7 @@ const createReplays = async (workspaceId, replays) => {
   await enqueueDeliveries(created);
   const deliveries = await Delivery.findAll({
     where: { id: created.map(({ id }) => id) },
-    include: [
-      { model: Destination, as: "destination", paranoid: false },
-      { model: Delivery, as: "replayOf" },
-    ],
+    include: Delivery.PRESENT_INCLUDE,
     order: [["id", "ASC"]],
   });
   return deliveries.map((delivery) => delivery.present());

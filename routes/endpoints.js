@@ -9,7 +9,6 @@ const { AppError } = require("../utils");
 const router = new Router({ prefix: "/endpoints" });
 router.use(auth.withApiToken);
 
-const params = z.object({ id: z.string().min(1).max(30) });
 const name = z.string().trim().min(1).max(100);
 const idempotencyHeader = z.string().trim().toLowerCase().min(1).max(100);
 
@@ -53,7 +52,7 @@ router.post(
   },
 );
 
-router.get("/:id", validate({ params }), async (ctx) => {
+router.get("/:id", validate({ params: validate.idParams }), async (ctx) => {
   const endpoint = await Endpoint.getOwned(
     ctx.state.workspace.id,
     ctx.state.params.id,
@@ -64,7 +63,7 @@ router.get("/:id", validate({ params }), async (ctx) => {
 router.patch(
   "/:id",
   validate({
-    params,
+    params: validate.idParams,
     body: z.object({
       name: name.optional(),
       isActive: z.boolean().optional(),
@@ -81,7 +80,7 @@ router.patch(
   },
 );
 
-router.delete("/:id", validate({ params }), async (ctx) => {
+router.delete("/:id", validate({ params: validate.idParams }), async (ctx) => {
   const endpoint = await Endpoint.getOwned(
     ctx.state.workspace.id,
     ctx.state.params.id,
@@ -90,13 +89,17 @@ router.delete("/:id", validate({ params }), async (ctx) => {
   ctx.status = 204;
 });
 
-router.post("/:id/rotate-slug", validate({ params }), async (ctx) => {
-  const endpoint = await Endpoint.getOwned(
-    ctx.state.workspace.id,
-    ctx.state.params.id,
-  );
-  await endpoint.update({ slug: Endpoint.generateSlug() });
-  [ctx.body] = await present([endpoint]);
-});
+router.post(
+  "/:id/rotate-slug",
+  validate({ params: validate.idParams }),
+  async (ctx) => {
+    const endpoint = await Endpoint.getOwned(
+      ctx.state.workspace.id,
+      ctx.state.params.id,
+    );
+    await endpoint.update({ slug: Endpoint.generateSlug() });
+    [ctx.body] = await present([endpoint]);
+  },
+);
 
 module.exports = router;

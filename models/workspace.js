@@ -44,20 +44,9 @@ Workspace.planDefaults = () => ({
 });
 
 Workspace.prototype.limits = function () {
-  const {
-    maxEndpoints,
-    maxDestinations,
-    maxEventsPerDay,
-    maxBodyBytes,
-    retentionDays,
-  } = this;
-  return {
-    maxEndpoints,
-    maxDestinations,
-    maxEventsPerDay,
-    maxBodyBytes,
-    retentionDays,
-  };
+  return Object.fromEntries(
+    Object.keys(DEFAULT_PLAN).map((key) => [key, this[key]]),
+  );
 };
 
 module.exports = Workspace;
