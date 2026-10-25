@@ -32,6 +32,8 @@ const attach = (server) => {
       return next(new Error("SERVICE_UNAVAILABLE"));
     }
     if (!session) return next(new Error("UNAUTHENTICATED"));
+    if (session.user.workspace.status !== "active")
+      return next(new Error("FORBIDDEN"));
     socket.join(`ws:${session.user.workspace.id}`);
     next();
   });

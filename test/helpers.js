@@ -20,6 +20,7 @@ const resetDatabase = async () => {
     "endpoints",
     "sessions",
     "email_tokens",
+    "api_tokens",
     "workspaces",
     "users",
   ])

@@ -3,6 +3,7 @@ const User = require("./user");
 const Workspace = require("./workspace");
 const Session = require("./session");
 const EmailToken = require("./emailToken");
+const ApiToken = require("./apiToken");
 const Endpoint = require("./endpoint");
 const Event = require("./event");
 const Destination = require("./destination");
@@ -15,6 +16,8 @@ Workspace.belongsTo(User, { as: "owner", foreignKey: "ownerUserId" });
 User.hasMany(Session, { as: "sessions", foreignKey: "userId" });
 Session.belongsTo(User, { as: "user", foreignKey: "userId" });
 EmailToken.belongsTo(User, { as: "user", foreignKey: "userId" });
+Workspace.hasMany(ApiToken, { as: "apiTokens", foreignKey: "workspaceId" });
+ApiToken.belongsTo(Workspace, { as: "workspace", foreignKey: "workspaceId" });
 Workspace.hasMany(Endpoint, { as: "endpoints", foreignKey: "workspaceId" });
 Endpoint.belongsTo(Workspace, { as: "workspace", foreignKey: "workspaceId" });
 Endpoint.hasMany(Event, { as: "events", foreignKey: "endpointId" });
@@ -44,6 +47,7 @@ module.exports = {
   Workspace,
   Session,
   EmailToken,
+  ApiToken,
   Endpoint,
   Event,
   Destination,

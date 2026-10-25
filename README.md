@@ -304,6 +304,8 @@ Optional knobs. They are read at use time and are not in `.env.example`:
 
 Base path: `/api/v1`. Auth is a `relay_sid` session cookie (HttpOnly, SameSite=Lax, 7 days). `POST`, `PATCH` and `DELETE` also require the `Origin` header, when present, to match `APP_BASE_URL`. JSON bodies are limited to 100 KB.
 
+Endpoint, event, destination and delivery routes also accept an API token as `Authorization: Bearer rly_...`. A token acts as the workspace owner. A request with a Bearer header and no cookie skips the `Origin` check. Token management, `/auth/me` and logout accept a session only. A suspended or deleted workspace gets `403` on every authenticated route.
+
 Auth column: **none** needs no session. **session** needs a logged-in user. **verified** needs a session and a verified email. **idem** also needs an `Idempotency-Key` header (up to 255 characters).
 
 Errors use one envelope:
@@ -368,6 +370,14 @@ Errors use one envelope:
 | ------ | ------------------------ | -------------- | ---------------------------------------- |
 | GET    | `/deliveries/:id`        | session        | Delivery with its attempt history.       |
 | POST   | `/deliveries/:id/replay` | verified, idem | Replay one delivery. Returns `delivery`. |
+
+### API tokens
+
+| Method | Path          | Auth     | Purpose                                                                            |
+| ------ | ------------- | -------- | ---------------------------------------------------------------------------------- |
+| GET    | `/tokens`     | session  | List tokens (name, prefix, expiry, last used). The secret is never returned again. |
+| POST   | `/tokens`     | verified | Create a token. Returns it once. At most 20 per workspace.                         |
+| DELETE | `/tokens/:id` | session  | Revoke (hard delete).                                                              |
 
 ### Ingest and health
 
@@ -489,8 +499,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow. CI is defined in `.gith
 - [x] **Phase 2.** Destinations, deliveries, SSRF checks, encrypted secrets, BullMQ queue, worker, outbound HTTP.
 - [x] **Phase 3.** Retries with backoff and jitter, concurrency semaphores, sweeper, manual replay with `Idempotency-Key`, retention purge.
 - [ ] **Phase 4.** Realtime and limits.
-  - [ ] Stage A: Socket.IO live updates (`event.created`, `delivery.updated`), polling kept as fallback. In progress.
-  - [ ] API tokens.
+  - [x] Stage A: Socket.IO live updates (`event.created`, `delivery.updated`), polling kept as fallback.
+  - [x] API tokens.
   - [ ] Usage, rate limits and quotas.
 - [ ] **Phase 5.** Analytics, account deletion, admin.
 - [ ] **Phase 6.** Hardening, deploy, observability.

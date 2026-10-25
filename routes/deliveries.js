@@ -8,7 +8,7 @@ const validate = require("../middleware/validate");
 const { createReplays } = require("../services/replay");
 
 const router = new Router();
-router.use(auth);
+router.use(auth.withApiToken);
 
 const params = z.object({ id: z.string().min(1).max(30) });
 

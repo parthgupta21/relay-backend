@@ -7,7 +7,7 @@ const validate = require("../middleware/validate");
 const { AppError } = require("../utils");
 
 const router = new Router({ prefix: "/endpoints" });
-router.use(auth);
+router.use(auth.withApiToken);
 
 const params = z.object({ id: z.string().min(1).max(30) });
 const name = z.string().trim().min(1).max(100);

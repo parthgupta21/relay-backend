@@ -9,7 +9,7 @@ const { BLOCKED_CUSTOM_HEADERS } = require("../services/outbound");
 const { AppError } = require("../utils");
 
 const router = new Router();
-router.use(auth);
+router.use(auth.withApiToken);
 
 const params = z.object({ id: z.string().min(1).max(30) });
 const fields = {

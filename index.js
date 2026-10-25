@@ -9,6 +9,7 @@ const authRoutes = require("./routes/auth");
 const endpointRoutes = require("./routes/endpoints");
 const eventRoutes = require("./routes/events");
 const destinationRoutes = require("./routes/destinations");
+const tokenRoutes = require("./routes/tokens");
 const deliveryRoutes = require("./routes/deliveries");
 const ingestRoutes = require("./routes/ingest");
 const namespace = require("./namespace");
@@ -55,6 +56,7 @@ if (role !== "ingest") {
     bodyParser({ enableTypes: ["json"], jsonLimit: "100kb" }),
   );
   api.use(authRoutes.routes());
+  api.use(tokenRoutes.routes());
   api.use(endpointRoutes.routes());
   api.use(eventRoutes.routes());
   api.use(destinationRoutes.routes());
