@@ -13,6 +13,7 @@ const { checkUrl, SsrfError } = require("./ssrf");
 const { send } = require("./outbound");
 const { enqueueDeliveries } = require("./queue");
 const { publish } = require("./realtime");
+const { recordUsage } = require("./usage");
 const { acquire, release } = require("./semaphore");
 const { retryDelay, parseRetryAfter } = require("../utils/backoff");
 
@@ -105,6 +106,7 @@ const recordAttempt = async (delivery, result) => {
     return settle(delivery, nextState(delivery, result), transaction);
   });
   if (!settled) return;
+  await recordUsage(delivery.destination.endpoint.workspace.id, "deliveries");
   await publishUpdate(delivery);
   if (delivery.status === "retry_scheduled")
     await enqueueDeliveries([delivery]);

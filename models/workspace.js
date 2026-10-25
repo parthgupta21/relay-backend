@@ -6,6 +6,7 @@ const DEFAULT_PLAN = {
   maxEndpoints: 5,
   maxDestinations: 3,
   maxEventsPerDay: 5000,
+  maxEventsPerMonth: 100000,
   maxBodyBytes: 524288,
   retentionDays: 3,
 };
@@ -28,6 +29,7 @@ const Workspace = sequelize.define(
     maxEndpoints: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: false },
     maxDestinations: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: false },
     maxEventsPerDay: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    maxEventsPerMonth: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
     maxBodyBytes: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
     retentionDays: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: false },
   },

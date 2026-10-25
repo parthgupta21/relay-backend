@@ -3,11 +3,12 @@ const ipaddr = require("ipaddr.js");
 const { ulid } = require("ulid");
 
 class AppError extends Error {
-  constructor(code, status, message, details) {
+  constructor(code, status, message, details, retryAfter) {
     super(message);
     this.code = code;
     this.status = status;
     this.details = details;
+    this.retryAfter = retryAfter;
   }
 }
 

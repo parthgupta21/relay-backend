@@ -14,9 +14,11 @@ const checkQuota = async (workspaceId) => {
     .exec();
   if (count > HOURLY_LIMIT)
     throw new AppError(
-      "QUOTA_EXCEEDED",
+      "RATE_LIMITED",
       429,
       "Replay limit reached for this hour",
+      undefined,
+      3600 - (Math.floor(Date.now() / 1000) % 3600),
     );
 };
 

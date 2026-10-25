@@ -39,6 +39,7 @@ test("register, verify, login, me, logout", async () => {
     maxEndpoints: 5,
     maxDestinations: 3,
     maxEventsPerDay: 5000,
+    maxEventsPerMonth: 100000,
     maxBodyBytes: 524288,
     retentionDays: 3,
   });

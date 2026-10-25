@@ -214,7 +214,10 @@ test("more than 100 replays an hour gets 429", async () => {
   await queue.connection.set(`replays:${workspace.id}:${hour}`, 100);
   const res = await replay(alice, deliveries[0].id, "k-limit");
   assert.strictEqual(res.status, 429);
-  assert.strictEqual(res.body.error.code, "QUOTA_EXCEEDED");
+  assert.strictEqual(res.body.error.code, "RATE_LIMITED");
+  assert.ok(
+    res.headers["retry-after"] >= 1 && res.headers["retry-after"] <= 3600,
+  );
   await queue.connection.del(`replays:${workspace.id}:${hour}`);
   assert.strictEqual(
     (await replay(alice, deliveries[0].id, "k-limit")).status,

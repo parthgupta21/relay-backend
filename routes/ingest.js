@@ -10,6 +10,7 @@ const {
 } = require("../models");
 const { enqueueDeliveries } = require("../services/queue");
 const { publish } = require("../services/realtime");
+const { limitIngest, recordUsage } = require("../services/usage");
 const { AppError, ipToBytes } = require("../utils");
 
 const REDACTED_HEADERS = ["authorization", "proxy-authorization", "cookie"];
@@ -31,6 +32,7 @@ router.all("/h/:slug{/*rest}", async (ctx) => {
     ],
   });
   if (!endpoint) throw new AppError("NOT_FOUND", 404, "Not found");
+  await limitIngest(endpoint);
 
   const raw = await getRawBody(ctx.req, {
     limit: endpoint.workspace.maxBodyBytes,
@@ -94,6 +96,7 @@ router.all("/h/:slug{/*rest}", async (ctx) => {
         return { event, deliveries };
       },
     );
+    await recordUsage(endpoint.workspaceId, "events");
     await publish(endpoint.workspace.id, "event.created", {
       endpointId: endpoint.publicId,
       eventId: event.publicId,

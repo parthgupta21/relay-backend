@@ -20,8 +20,9 @@ module.exports = async (ctx, next) => {
     if (ctx.status === 404 && ctx.body == null)
       throw new AppError("NOT_FOUND", 404, "Not found");
   } catch (err) {
-    const { code, status, message, details } = toAppError(err);
+    const { code, status, message, details, retryAfter } = toAppError(err);
     ctx.status = status;
+    if (retryAfter) ctx.set("Retry-After", retryAfter);
     ctx.body = {
       error: {
         code,
