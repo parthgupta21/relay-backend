@@ -10,6 +10,7 @@ const endpointRoutes = require("./routes/endpoints");
 const eventRoutes = require("./routes/events");
 const destinationRoutes = require("./routes/destinations");
 const tokenRoutes = require("./routes/tokens");
+const accountRoutes = require("./routes/account");
 const analyticsRoutes = require("./routes/analytics");
 const usageRoutes = require("./routes/usage");
 const deliveryRoutes = require("./routes/deliveries");
@@ -59,6 +60,7 @@ if (role !== "ingest") {
   );
   api.use(authRoutes.routes());
   api.use(tokenRoutes.routes());
+  api.use(accountRoutes.routes());
   api.use(analyticsRoutes.routes());
   api.use(endpointRoutes.routes());
   api.use(usageRoutes.routes());

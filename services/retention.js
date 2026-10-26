@@ -11,17 +11,22 @@ const purgeExpired = async () => {
       where: { workspaceId: workspace.id },
       attributes: ["id"],
     });
+    const deleted = workspace.status === "deleted";
     const where = {
       endpointId: endpoints.map(({ id }) => id),
-      receivedAt: {
-        [Op.lt]: new Date(Date.now() - workspace.retentionDays * DAY_MS),
-      },
+      ...(!deleted && {
+        receivedAt: {
+          [Op.lt]: new Date(Date.now() - workspace.retentionDays * DAY_MS),
+        },
+      }),
     };
     let destroyed;
     do {
       destroyed = await Event.destroy({ where, limit: BATCH });
       purged += destroyed;
     } while (destroyed === BATCH);
+    if (deleted)
+      await Endpoint.destroy({ where: { workspaceId: workspace.id } });
   }
   return purged;
 };

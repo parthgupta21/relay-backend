@@ -101,3 +101,30 @@ test("purges in batches until nothing is left", async () => {
   );
   assert.strictEqual(await purgeExpired(), 1500);
 });
+
+test("a deleted workspace is purged entirely regardless of retention", async () => {
+  const goneAgent = await signUp("gone@example.com");
+  await seed(goneAgent, "gone", [0, 1]);
+  const gone = await Workspace.findOne({
+    include: [{ association: "owner", where: { email: "gone@example.com" } }],
+  });
+  const counts = {
+    events: await Event.count(),
+    destinations: await Destination.count(),
+    deliveries: await Delivery.count(),
+    attempts: await DeliveryAttempt.count(),
+  };
+  await gone.update({ status: "deleted" });
+
+  assert.strictEqual(await purgeExpired(), 2);
+
+  assert.strictEqual(
+    await Endpoint.count({ where: { workspaceId: gone.id } }),
+    0,
+  );
+  assert.strictEqual(await Event.count(), counts.events - 2);
+  assert.strictEqual(await Destination.count(), counts.destinations - 1);
+  assert.strictEqual(await Delivery.count(), counts.deliveries - 2);
+  assert.strictEqual(await DeliveryAttempt.count(), counts.attempts - 2);
+  assert.strictEqual(await purgeExpired(), 0);
+});

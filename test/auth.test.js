@@ -93,6 +93,15 @@ test("register validates input", async () => {
   assert.strictEqual(res.body.error.details.length, 2);
 });
 
+test("register rejects the tombstone email domain", async () => {
+  const res = await newAgent()
+    .post(`${API}/register`)
+    .send({ email: "deleted-1@deleted.invalid", password: PASSWORD });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual(res.body.error.code, "VALIDATION_FAILED");
+  assert.strictEqual(res.body.error.details[0].path, "body.email");
+});
+
 test("login: bad credentials give the same 401, good one sets a session", async () => {
   const wrongPassword = await newAgent()
     .post(`${API}/login`)

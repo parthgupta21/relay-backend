@@ -18,13 +18,19 @@ const AuditLog = sequelize.define(
   },
 );
 
-AuditLog.record = (action, { workspaceId, actorUserId, ip, meta }) =>
-  AuditLog.create({
-    action,
-    workspaceId,
-    actorUserId,
-    ip: ip && ipToBytes(ip),
-    meta,
-  });
+AuditLog.record = (
+  action,
+  { workspaceId, actorUserId, ip, meta, transaction },
+) =>
+  AuditLog.create(
+    {
+      action,
+      workspaceId,
+      actorUserId,
+      ip: ip && ipToBytes(ip),
+      meta,
+    },
+    { transaction },
+  );
 
 module.exports = AuditLog;

@@ -2,6 +2,7 @@ const { connection } = require("../services/queue");
 const { AppError, sha256 } = require("../utils");
 
 const TTL_SECONDS = 24 * 60 * 60;
+const PREFIX = process.env.NODE_ENV === "test" ? "test:" : "";
 
 module.exports = async (ctx, next) => {
   const key = ctx.get("Idempotency-Key");
@@ -23,7 +24,7 @@ module.exports = async (ctx, next) => {
       503,
       "Idempotency store unavailable",
     );
-  const redisKey = `idem:${ctx.state.workspace.id}:${key}`;
+  const redisKey = `${PREFIX}idem:${ctx.state.workspace.id}:${key}`;
   const fingerprint = sha256(
     `${ctx.method} ${ctx.path}\n${JSON.stringify(ctx.request.body)}`,
   ).toString("hex");

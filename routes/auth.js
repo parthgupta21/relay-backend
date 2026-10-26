@@ -42,6 +42,10 @@ router.post(
   validate({ body: z.object({ email: emailField, password: newPassword }) }),
   async (ctx) => {
     const { email: address, password } = ctx.state.body;
+    if (address.endsWith("@deleted.invalid"))
+      throw new AppError("VALIDATION_FAILED", 422, "Invalid email", [
+        { path: "body.email", message: "Invalid email" },
+      ]);
     const created = await User.register(address, password);
     if (created) await email.sendVerification(address, created.token);
     else await email.sendSignupAttempt(address);
