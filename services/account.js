@@ -6,6 +6,7 @@ const {
   AuditLog,
 } = require("../models");
 const { connection } = require("./queue");
+const { AppError } = require("../utils");
 
 const PREFIX = process.env.NODE_ENV === "test" ? "test:" : "";
 
@@ -16,6 +17,9 @@ const unlinkMatching = async (match) => {
 
 const deleteWorkspace = async (workspace, { actorUserId, ip, action }) => {
   await sequelize.transaction(async (transaction) => {
+    await workspace.reload({ transaction, lock: transaction.LOCK.UPDATE });
+    if (workspace.status === "deleted")
+      throw new AppError("CONFLICT", 409, "Workspace is deleted");
     const owner = await workspace.getOwner({ transaction });
     await owner.update(
       {

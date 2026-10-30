@@ -4,7 +4,7 @@ const { sequelize, User, Session, EmailToken, AuditLog } = require("../models");
 const auth = require("../middleware/auth");
 const validate = require("../middleware/validate");
 const email = require("../services/email");
-const { AppError } = require("../utils");
+const { AppError, sha256 } = require("../utils");
 
 const router = new Router({ prefix: "/auth" });
 
@@ -19,6 +19,7 @@ const me = (user, workspace) => ({
     id: user.publicId,
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
+    isOperator: user.isOperator,
   },
   workspace: {
     id: workspace.publicId,
@@ -128,8 +129,9 @@ router.post(
   },
 );
 
-router.post("/logout", auth, async (ctx) => {
-  await ctx.state.session.destroy();
+router.post("/logout", async (ctx) => {
+  const token = ctx.cookies.get("relay_sid");
+  if (token) await Session.destroy({ where: { tokenHash: sha256(token) } });
   ctx.cookies.set("relay_sid", null);
   ctx.status = 204;
 });

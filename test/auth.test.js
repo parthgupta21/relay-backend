@@ -10,7 +10,7 @@ const {
   tokenFrom,
   newAgent,
 } = require("./helpers");
-const { Session, AuditLog, User, EmailToken } = require("../models");
+const { Session, AuditLog, User, EmailToken, Workspace } = require("../models");
 
 const API = "/api/v1/auth";
 const EMAIL = "alice@example.com";
@@ -55,6 +55,7 @@ test("register, verify, login, me, logout", async () => {
   const me = await agent.get(`${API}/me`);
   assert.strictEqual(me.status, 200);
   assert.strictEqual(me.body.user.email, EMAIL);
+  assert.strictEqual(me.body.user.isOperator, false);
 
   const reused = await newAgent()
     .post(`${API}/verify-email`)
@@ -228,6 +229,42 @@ test("expired session is rejected", async () => {
     { where: {} },
   );
   assert.strictEqual((await agent.get(`${API}/me`)).status, 401);
+});
+
+test("logout needs no active workspace and never fails without a session", async () => {
+  const agent = newAgent();
+  await agent
+    .post(`${API}/login`)
+    .send({ email: EMAIL, password: "a-brand-new-password" });
+  const user = await User.findOne({ where: { email: EMAIL } });
+  const sessions = await Session.count({ where: { userId: user.id } });
+  await Workspace.update(
+    { status: "suspended" },
+    { where: { ownerUserId: user.id } },
+  );
+  try {
+    assert.strictEqual((await agent.get(`${API}/me`)).status, 403);
+    const out = await agent.post(`${API}/logout`);
+    assert.strictEqual(out.status, 204);
+    assert.match(out.headers["set-cookie"].join(";"), /relay_sid=;/);
+    assert.strictEqual(
+      await Session.count({ where: { userId: user.id } }),
+      sessions - 1,
+    );
+  } finally {
+    await Workspace.update(
+      { status: "active" },
+      { where: { ownerUserId: user.id } },
+    );
+  }
+
+  const anonymous = await newAgent().post(`${API}/logout`);
+  assert.strictEqual(anonymous.status, 204);
+  const unknown = await newAgent()
+    .post(`${API}/logout`)
+    .set("Cookie", "relay_sid=unknown");
+  assert.strictEqual(unknown.status, 204);
+  assert.match(unknown.headers["set-cookie"].join(";"), /relay_sid=;/);
 });
 
 test("cross-origin POST is rejected, same origin allowed", async () => {

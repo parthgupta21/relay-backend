@@ -41,6 +41,17 @@ DeliveryAttempt.belongsTo(Delivery, {
   foreignKey: "deliveryId",
 });
 
+AuditLog.belongsTo(Workspace, {
+  as: "workspace",
+  foreignKey: "workspaceId",
+  constraints: false,
+});
+AuditLog.belongsTo(User, {
+  as: "actor",
+  foreignKey: "actorUserId",
+  constraints: false,
+});
+
 module.exports = {
   sequelize,
   User,

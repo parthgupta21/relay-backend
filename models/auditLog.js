@@ -1,6 +1,6 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database");
-const { ipToBytes } = require("../utils");
+const { ipToBytes, bytesToIp } = require("../utils");
 
 const AuditLog = sequelize.define(
   "AuditLog",
@@ -32,5 +32,16 @@ AuditLog.record = (
     },
     { transaction },
   );
+
+AuditLog.prototype.present = function () {
+  return {
+    action: this.action,
+    workspaceId: this.workspace?.publicId ?? null,
+    actorEmail: this.actor?.email ?? null,
+    ip: this.ip && bytesToIp(this.ip),
+    meta: this.meta,
+    createdAt: this.createdAt,
+  };
+};
 
 module.exports = AuditLog;
