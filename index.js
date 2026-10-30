@@ -22,6 +22,7 @@ const { Destination } = require("./models");
 const queue = require("./services/queue");
 const errorHandler = require("./middleware/errorHandler");
 const realtime = require("./services/realtime");
+const metrics = require("./services/metrics");
 
 const app = new Koa();
 app.proxy = process.env.TRUST_PROXY === "true";
@@ -39,6 +40,15 @@ app.use((ctx, next) =>
     return next();
   }),
 );
+app.use(metrics.middleware);
+app.use(async (ctx, next) => {
+  const started = Date.now();
+  await next();
+  if (ctx.path === "/healthz" || ctx.path === "/readyz") return;
+  console.info(
+    `request status=${ctx.status} durationMs=${Date.now() - started}`,
+  );
+});
 app.use(errorHandler);
 
 const health = new Router();
@@ -47,7 +57,7 @@ health.get("/healthz", (ctx) => {
 });
 health.get("/readyz", async (ctx) => {
   await sequelize.authenticate();
-  ctx.body = { ok: true };
+  ctx.body = { ok: true, redis: queue.connection.status === "ready" };
 });
 app.use(health.routes());
 
@@ -81,6 +91,14 @@ if (require.main === module) {
     console.info(`relay listening on ${port} role=${role}`),
   );
   const sockets = role !== "ingest" ? realtime.attach(server) : null;
+  const metricsServer = process.env.METRICS_PORT
+    ? metrics.serve(Number(process.env.METRICS_PORT), () =>
+        sequelize.authenticate().then(
+          () => true,
+          () => false,
+        ),
+      )
+    : null;
   process.once("SIGTERM", () => {
     setTimeout(() => process.exit(1), 10000).unref();
     server.close(() =>
@@ -93,6 +111,7 @@ if (require.main === module) {
         }),
     );
     sockets?.close();
+    metricsServer?.close();
   });
 }
 

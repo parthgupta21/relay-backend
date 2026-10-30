@@ -11,6 +11,10 @@ const write =
     const method = ctx ? ctx.method : "-";
     const url = ctx ? maskSlug(ctx.path) : "-";
     const msg = util.format(...args).replace(/\s*[\r\n]+\s*/g, " ");
+    if (process.env.LOG_FORMAT === "json")
+      return stream.write(
+        `${JSON.stringify({ ts: new Date().toISOString(), level, requestId, method, url, msg })}\n`,
+      );
     stream.write(
       `level=[${level}] requestId=${requestId} method=${method} url=${url} msg="${msg}"\n`,
     );

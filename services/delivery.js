@@ -16,6 +16,7 @@ const { publish } = require("./realtime");
 const { recordUsage } = require("./usage");
 const { acquire, release } = require("./semaphore");
 const { retryDelay, parseRetryAfter } = require("../utils/backoff");
+const { deliveryAttempts, deliveryAttemptDuration } = require("./metrics");
 
 const LOCK_SECONDS = 60;
 
@@ -105,6 +106,8 @@ const recordAttempt = async (delivery, result) => {
     );
     return settle(delivery, nextState(delivery, result), transaction);
   });
+  deliveryAttempts.inc({ outcome: result.outcome });
+  deliveryAttemptDuration.observe(result.durationMs / 1000);
   if (!settled) return;
   await recordUsage(delivery.destination.endpoint.workspace.id, "deliveries");
   await publishUpdate(delivery);

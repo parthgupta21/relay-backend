@@ -1,6 +1,7 @@
 require("dotenv").config({ quiet: true });
 require("./logging");
 const IORedis = require("ioredis");
+const { Gauge } = require("prom-client");
 const { Worker } = require("bullmq");
 const sequelize = require("./database");
 const { Destination } = require("./models");
@@ -8,6 +9,7 @@ const { processJob } = require("./services/delivery");
 const queue = require("./services/queue");
 const { sweep } = require("./services/sweeper");
 const { purgeExpired } = require("./services/retention");
+const metrics = require("./services/metrics");
 
 Destination.assertEncryptionKey();
 
@@ -25,6 +27,31 @@ worker.on("failed", (job, err) =>
   console.error(`job ${job?.id} failed`, err.stack || err),
 );
 
+const metricsServer = process.env.METRICS_PORT
+  ? metrics.serve(
+      Number(process.env.METRICS_PORT),
+      async () =>
+        (await sequelize.authenticate().then(
+          () => true,
+          () => false,
+        )) && worker.isRunning(),
+    )
+  : null;
+
+new Gauge({
+  name: "relay_queue_jobs",
+  help: "Delivery queue jobs by state",
+  labelNames: ["state"],
+  registers: [metrics.registry],
+  async collect() {
+    const counts = await queue.queue
+      .getJobCounts("waiting", "delayed", "active")
+      .catch((err) => console.warn("queue counts failed", err.message));
+    for (const [state, count] of Object.entries(counts || {}))
+      this.set({ state }, count);
+  },
+});
+
 const timers = [
   setInterval(
     () => sweep().catch((err) => console.error("sweep failed", err.message)),
@@ -41,6 +68,7 @@ const timers = [
 
 const shutdown = async () => {
   timers.forEach(clearInterval);
+  metricsServer?.close();
   await worker.close();
   await queue.close();
   connection.disconnect();
