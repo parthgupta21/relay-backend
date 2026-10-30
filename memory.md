@@ -38,10 +38,13 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
   - [x] C: sweeper for stuck and missed deliveries
   - [x] D: manual replay with Idempotency-Key
   - [x] E: retention purge
-- [ ] Phase 4: realtime (Socket.IO), API tokens, usage, rate limits, quotas
-  - [x] Stage A: realtime (Socket.IO)
-- [ ] Phase 5: analytics, account deletion, admin
-- [ ] Phase 6: hardening, deploy, observability
+- [x] Phase 4: realtime and limits
+  - [x] Socket.IO live updates, API tokens (Bearer), usage metering, per-endpoint rate limit, daily and monthly quotas
+- [x] Phase 5: analytics, account deletion, admin
+  - [x] `GET /analytics/deliveries`, `POST /account/delete` (tombstone, purged by retention), operator admin API with `audit_log`, `npm run operator`
+- [x] Phase 6: hardening, deploy, observability
+  - [x] Per-IP auth and account-delete rate limits, purge of expired sessions and email tokens, Prometheus metrics on `METRICS_PORT`, JSON logs (`LOG_FORMAT=json`), access log, `docker-compose.prod.yml`, nginx web image with strict CSP, GHCR deploy workflow
+- Final state: 221 tests in 28 files (209 `test(` lines, where the SSRF host loop in `test/ssrf.test.js` counts 13 tests as one line). Production-stack smoke test passed 8/8. Latest backend commit before the docs commits: a73d7f5.
 
 ## Decisions
 
@@ -71,7 +74,7 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - Scheduled work uses `setInterval` in worker.js, not BullMQ repeatable jobs: sweep and purge are idempotent and safe to run on every worker replica at once (conditional UPDATEs, deterministic jobIds, deleting the same rows twice is harmless), so a repeatable job would add Redis scheduler state for no gain. Cost: with N workers each runs the sweep (more DB reads, no correctness issue).
 - Sweeper (`services/sweeper.js`): `pending`/`retry_scheduled` with `next_attempt_at` older than 60s, or `in_flight` with `locked_until` in the past, 500 per run. Stuck `in_flight` becomes `retry_scheduled` with `next_attempt_at = now` (the crashed attempt counts) or `failed`/`exhausted`. The reset is a conditional UPDATE on `status='in_flight'` and the same `locked_until`, so a delivery that finished meanwhile is not touched. Ingest and replay always set `next_attempt_at`, so no NULL case exists.
 - Idempotency (`middleware/idempotency.js`): Redis key `idem:{workspaceId}:{key}`, TTL 24h, value JSON `{fingerprint, response?}`. Fingerprint is sha256 of `METHOD path\nJSON(body)` (parsed body, so key order matters). SET NX reserves, a reservation without `response` means in progress (409 CONFLICT), a different fingerprint gives 422 IDEMPOTENCY_KEY_REUSED, a thrown error deletes the reservation, success overwrites it with `{status, body}` for replay. Redis was chosen over a DB table to avoid a migration and because TTL expiry is built in.
-- Replay quota: Redis counter `replays:{workspaceId}:{yyyymmddhh UTC}` incremented once per replay request (not per delivery created), 100 per hour, 429 QUOTA_EXCEEDED. It is checked after ownership and validation, and only on requests that reach the handler (idempotent replays of a stored response do not count).
+- Replay quota: Redis counter `replays:{workspaceId}:{yyyymmddhh UTC}` incremented once per replay request (not per delivery created), 100 per hour, `429 RATE_LIMITED` with `Retry-After` (services/replay.js). It is checked after ownership and validation, and only on requests that reach the handler (idempotent replays of a stored response do not count).
 - Retention (`services/retention.js`): per workspace, delete events older than `retention_days` in batches of 1000 by id; deliveries and attempts go through the existing `ON DELETE CASCADE` foreign keys. Hourly from worker.js.
 - Env knobs: `RETRY_BASE_MS` (30000), `RETRY_CAP_MS` (3600000), `DESTINATION_CONCURRENCY` (5), `WORKSPACE_CONCURRENCY` (20), `SWEEPER_INTERVAL_MS` (30000), `RETENTION_INTERVAL_MS` (3600000). All are read lazily with defaults; none are in `.env.example`.
 - Delivery object (`Delivery.present`) now includes `trigger` and `replayOf` (original delivery publicId or null); `Delivery.belongsTo(Delivery, as "replayOf")` must be included wherever `present()` is called.
@@ -82,6 +85,16 @@ Design doc: https://claude.ai/code/artifact/f69bd9a8-ff89-4860-81d7-391cddee88a4
 - Sockets attach in every role except `ingest`.
 
 ## Known gaps
+
+Found in the production smoke test:
+
+- Plain-HTTP login returns 500 when `NODE_ENV=production`: the session cookie is `Secure`. It needs HTTPS, or `X-Forwarded-Proto: https` from a TLS proxy.
+- The SSRF guard blocks NAT64 `64:ff9b::/96` destinations.
+- A 403 on `/admin` can appear in `relay_http_requests_total` with a raw route-regex `route` label.
+- nginx's error log may include an ingest slug on upstream errors. The access log is masked.
+- `OPTIONS` (CORS preflight) requests sent to an ingest URL are captured as events and count toward rate limit and quota, because ingest sends no CORS headers.
+
+Open items from the build:
 
 - Endpoint quota check is count-then-insert, so two concurrent creates can exceed the limit by one.
 - `events.method` is VARCHAR(10); HTTP methods longer than 10 chars (e.g. UNSUBSCRIBE) would fail insert with a 500.
