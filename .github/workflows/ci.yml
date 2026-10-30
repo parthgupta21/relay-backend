@@ -87,3 +87,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prettier --check .
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build .
+      - run: cp .env.production.example .env.production
+      - run: docker compose -f docker-compose.prod.yml --env-file .env.production.example config -q

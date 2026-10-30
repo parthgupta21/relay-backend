@@ -1,0 +1,117 @@
+x-app: &app
+  image: ${RELAY_IMAGE:-ghcr.io/parthgupta21/relay-backend:latest}
+  build: .
+  init: true
+  restart: unless-stopped
+  env_file: .env.production
+
+x-app-depends: &app-depends
+  mysql:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  migrate:
+    condition: service_completed_successfully
+
+x-http-healthcheck: &http-healthcheck
+  test:
+    - CMD
+    - node
+    - -e
+    - "fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 20s
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["npm", "run", "migrate"]
+    environment:
+      NODE_ENV: production
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    environment:
+      ROLE: app
+    depends_on: *app-depends
+    healthcheck: *http-healthcheck
+
+  ingest:
+    <<: *app
+    environment:
+      ROLE: ingest
+    depends_on: *app-depends
+    healthcheck: *http-healthcheck
+
+  worker:
+    <<: *app
+    command: ["node", "worker.js"]
+    depends_on: *app-depends
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9100/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  web:
+    image: ${RELAY_WEB_IMAGE:-ghcr.io/parthgupta21/relay-frontend:latest}
+    build: ${RELAY_FRONTEND_DIR:-../relay-frontend}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+      ingest:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  redis_data:

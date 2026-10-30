@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: relay
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:9100"]
+        labels:
+          role: api
+      - targets: ["ingest:9100"]
+        labels:
+          role: ingest
+      - targets: ["worker:9100"]
+        labels:
+          role: worker
