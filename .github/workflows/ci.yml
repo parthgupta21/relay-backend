@@ -69,7 +69,7 @@ jobs:
       SSRF_ALLOWLIST: 127.0.0.1/32
       REDIS_URL: redis://127.0.0.1:6379
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -80,7 +80,7 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -91,7 +91,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build .
       - run: cp .env.production.example .env.production
       - run: docker compose -f docker-compose.prod.yml --env-file .env.production.example config -q
