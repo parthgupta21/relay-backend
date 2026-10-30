@@ -109,4 +109,11 @@ const getUsage = async (workspace) => {
   };
 };
 
-module.exports = { limitIngest, recordUsage, getUsage };
+module.exports = {
+  PREFIX,
+  stamp,
+  tooMany,
+  limitIngest,
+  recordUsage,
+  getUsage,
+};

@@ -1,5 +1,11 @@
 const { Op } = require("sequelize");
-const { Workspace, Endpoint, Event } = require("../models");
+const {
+  Workspace,
+  Endpoint,
+  Event,
+  Session,
+  EmailToken,
+} = require("../models");
 
 const BATCH = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,6 +34,13 @@ const purgeExpired = async () => {
     if (deleted)
       await Endpoint.destroy({ where: { workspaceId: workspace.id } });
   }
+  const now = new Date();
+  await Session.destroy({ where: { expiresAt: { [Op.lt]: now } } });
+  await EmailToken.destroy({
+    where: {
+      [Op.or]: [{ expiresAt: { [Op.lt]: now } }, { usedAt: { [Op.ne]: null } }],
+    },
+  });
   return purged;
 };
 

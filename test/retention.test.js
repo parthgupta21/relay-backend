@@ -5,11 +5,15 @@ const {
   Delivery,
   DeliveryAttempt,
   Destination,
+  EmailToken,
   Endpoint,
   Event,
+  Session,
+  User,
   Workspace,
 } = require("../models");
 const { purgeExpired } = require("../services/retention");
+const { sha256 } = require("../utils");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -127,4 +131,39 @@ test("a deleted workspace is purged entirely regardless of retention", async () 
   assert.strictEqual(await Delivery.count(), counts.deliveries - 2);
   assert.strictEqual(await DeliveryAttempt.count(), counts.attempts - 2);
   assert.strictEqual(await purgeExpired(), 0);
+});
+
+test("expired sessions and used or expired email tokens are purged, live ones kept", async () => {
+  await Session.destroy({ where: {} });
+  await EmailToken.destroy({ where: {} });
+  const { id: userId } = await User.findOne();
+  const session = (label, expiresAt) =>
+    Session.create({ userId, tokenHash: sha256(label), expiresAt });
+  const emailToken = (label, expiresAt, usedAt = null) =>
+    EmailToken.create({
+      userId,
+      purpose: "verify",
+      tokenHash: sha256(label),
+      expiresAt,
+      usedAt,
+    });
+  const past = new Date(Date.now() - DAY_MS);
+  const future = new Date(Date.now() + DAY_MS);
+  await session("live-session", future);
+  await session("expired-session", past);
+  await emailToken("live-token", future);
+  await emailToken("expired-token", past);
+  await emailToken("used-token", future, past);
+  await emailToken("used-expired-token", past, past);
+
+  await purgeExpired();
+
+  assert.deepStrictEqual(
+    (await Session.findAll()).map((row) => row.tokenHash),
+    [sha256("live-session")],
+  );
+  assert.deepStrictEqual(
+    (await EmailToken.findAll()).map((row) => row.tokenHash),
+    [sha256("live-token")],
+  );
 });

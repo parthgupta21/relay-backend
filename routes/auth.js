@@ -2,11 +2,13 @@ const Router = require("@koa/router");
 const { z } = require("zod");
 const { sequelize, User, Session, EmailToken, AuditLog } = require("../models");
 const auth = require("../middleware/auth");
+const rateLimit = require("../middleware/rateLimit");
 const validate = require("../middleware/validate");
 const email = require("../services/email");
 const { AppError, sha256 } = require("../utils");
 
 const router = new Router({ prefix: "/auth" });
+const limitAuth = rateLimit("auth", "AUTH_RATE_PER_MINUTE", 10);
 
 const emailField = z.string().trim().toLowerCase().pipe(z.email().max(255));
 const newPassword = z.string().min(10).max(256);
@@ -40,6 +42,7 @@ const startSession = async (ctx, user) => {
 
 router.post(
   "/register",
+  limitAuth,
   validate({ body: z.object({ email: emailField, password: newPassword }) }),
   async (ctx) => {
     const { email: address, password } = ctx.state.body;
@@ -57,6 +60,7 @@ router.post(
 
 router.post(
   "/verify-email",
+  limitAuth,
   validate({ body: z.object({ token: tokenField }) }),
   async (ctx) => {
     const userId = await sequelize.transaction(async (transaction) => {
@@ -86,6 +90,7 @@ router.post(
 
 router.post(
   "/resend-verification",
+  limitAuth,
   validate({ body: z.object({ email: emailField }) }),
   async (ctx) => {
     const user = await User.findOne({
@@ -108,6 +113,7 @@ router.post(
 
 router.post(
   "/login",
+  limitAuth,
   validate({
     body: z.object({ email: emailField, password: z.string().min(1).max(256) }),
   }),
@@ -138,6 +144,7 @@ router.post("/logout", async (ctx) => {
 
 router.post(
   "/forgot-password",
+  limitAuth,
   validate({ body: z.object({ email: emailField }) }),
   async (ctx) => {
     const user = await User.findOne({
@@ -154,6 +161,7 @@ router.post(
 
 router.post(
   "/reset-password",
+  limitAuth,
   validate({ body: z.object({ token: tokenField, password: newPassword }) }),
   async (ctx) => {
     const { token, password } = ctx.state.body;
