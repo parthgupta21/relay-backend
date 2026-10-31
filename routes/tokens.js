@@ -6,7 +6,7 @@ const requireVerified = require("../middleware/requireVerified");
 const validate = require("../middleware/validate");
 const { AppError } = require("../utils");
 
-const router = new Router({ prefix: "/tokens" });
+const router = new Router({ prefix: "/tokens", sensitive: true });
 router.use(auth);
 
 const audit = (ctx, action, apiToken) =>

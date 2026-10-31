@@ -22,7 +22,7 @@ const tooDeep = (value, level = 0) =>
     typeof value === "object" &&
     Object.values(value).some((child) => tooDeep(child, level + 1)));
 
-const router = new Router();
+const router = new Router({ sensitive: true });
 router.use(rateLimit("ingest", "INGEST_IP_RATE_PER_MINUTE", 1200));
 
 router.all("/h/:slug{/*rest}", async (ctx) => {

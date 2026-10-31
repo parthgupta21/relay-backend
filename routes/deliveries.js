@@ -6,7 +6,7 @@ const requireVerified = require("../middleware/requireVerified");
 const validate = require("../middleware/validate");
 const { createReplays } = require("../services/replay");
 
-const router = new Router();
+const router = new Router({ sensitive: true });
 router.use(auth.withApiToken);
 
 router.get(

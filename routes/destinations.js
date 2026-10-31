@@ -8,7 +8,7 @@ const { checkUrl, SsrfError } = require("../services/ssrf");
 const { BLOCKED_CUSTOM_HEADERS } = require("../services/outbound");
 const { AppError } = require("../utils");
 
-const router = new Router();
+const router = new Router({ sensitive: true });
 router.use(auth.withApiToken);
 
 const fields = {

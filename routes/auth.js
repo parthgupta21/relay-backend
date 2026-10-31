@@ -14,7 +14,7 @@ const validate = require("../middleware/validate");
 const email = require("../services/email");
 const { AppError, sha256 } = require("../utils");
 
-const router = new Router({ prefix: "/auth" });
+const router = new Router({ prefix: "/auth", sensitive: true });
 const limitAuth = rateLimit("auth", "AUTH_RATE_PER_MINUTE", 10);
 
 const emailField = z.string().trim().toLowerCase().pipe(z.email().max(255));

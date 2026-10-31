@@ -6,7 +6,7 @@ const requireVerified = require("../middleware/requireVerified");
 const validate = require("../middleware/validate");
 const { AppError } = require("../utils");
 
-const router = new Router({ prefix: "/endpoints" });
+const router = new Router({ prefix: "/endpoints", sensitive: true });
 router.use(auth.withApiToken);
 
 const name = z.string().trim().min(1).max(100);

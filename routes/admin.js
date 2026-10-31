@@ -17,7 +17,7 @@ const { deleteWorkspace } = require("../services/account");
 const { getUsage } = require("../services/usage");
 const { AppError, sha256 } = require("../utils");
 
-const router = new Router({ prefix: "/admin" });
+const router = new Router({ prefix: "/admin", sensitive: true });
 router.use(auth, requireOperator);
 
 const decodeCursor = (value) => {

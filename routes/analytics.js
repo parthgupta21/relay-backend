@@ -5,7 +5,7 @@ const auth = require("../middleware/auth");
 const validate = require("../middleware/validate");
 const { RANGES, getDeliveryAnalytics } = require("../services/analytics");
 
-const router = new Router({ prefix: "/analytics" });
+const router = new Router({ prefix: "/analytics", sensitive: true });
 router.use(auth.withApiToken);
 
 router.get(

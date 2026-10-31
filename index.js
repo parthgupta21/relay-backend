@@ -52,7 +52,7 @@ app.use(async (ctx, next) => {
 });
 app.use(errorHandler);
 
-const health = new Router();
+const health = new Router({ sensitive: true });
 health.get("/healthz", (ctx) => {
   ctx.body = { ok: true };
 });
@@ -65,7 +65,7 @@ app.use(health.routes());
 const role = process.env.ROLE || "all";
 
 if (role !== "ingest") {
-  const api = new Router({ prefix: "/api/v1" });
+  const api = new Router({ prefix: "/api/v1", sensitive: true });
   api.use(
     (ctx, next) => {
       ctx.set("Cache-Control", "no-store");

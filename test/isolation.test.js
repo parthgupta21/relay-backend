@@ -93,3 +93,19 @@ test("unauthenticated requests get 401", async () => {
   ])
     assert.strictEqual((await anon.get(`/api/v1${path}`)).status, 401, path);
 });
+
+test("path case variants never skip router middleware", async () => {
+  const anon = request(app.callback());
+  for (const path of [
+    "/API/v1/endpoints",
+    "/api/V1/endpoints",
+    "/api/v1/ADMIN/workspaces",
+    "/api/v1/Admin/audit",
+    `/api/v1/EVENTS/${eventId}/body`,
+  ])
+    assert.strictEqual((await anon.get(path)).status, 404, path);
+  assert.strictEqual(
+    (await anon.post(`/H/${endpoint.slug}`).send("x")).status,
+    404,
+  );
+});

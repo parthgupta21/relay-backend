@@ -2,7 +2,7 @@ const Router = require("@koa/router");
 const auth = require("../middleware/auth");
 const { getUsage } = require("../services/usage");
 
-const router = new Router({ prefix: "/usage" });
+const router = new Router({ prefix: "/usage", sensitive: true });
 router.use(auth.withApiToken);
 
 router.get("/", async (ctx) => {

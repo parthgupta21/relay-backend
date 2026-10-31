@@ -8,7 +8,7 @@ const { AuditLog } = require("../models");
 const account = require("../services/account");
 const { AppError } = require("../utils");
 
-const router = new Router({ prefix: "/account" });
+const router = new Router({ prefix: "/account", sensitive: true });
 router.use(auth);
 
 router.post(

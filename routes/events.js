@@ -9,7 +9,7 @@ const validate = require("../middleware/validate");
 const { createReplays } = require("../services/replay");
 const { AppError, bytesToIp } = require("../utils");
 
-const router = new Router();
+const router = new Router({ sensitive: true });
 router.use(auth.withApiToken);
 
 const decodeCursor = (value) => {
