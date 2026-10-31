@@ -3,7 +3,7 @@ const assert = require("node:assert");
 const crypto = require("crypto");
 const http = require("http");
 const { app, request, sequelize, resetDatabase, signUp } = require("./helpers");
-const { Workspace, Endpoint } = require("../models");
+const { Workspace, Endpoint, Event } = require("../models");
 
 let agent;
 let endpoint;
@@ -179,4 +179,23 @@ test("rotated slug stops the old url and eventCount24h counts events", async () 
   const count = await sequelize.models.Event.count();
   assert.strictEqual(rotated.body.eventCount24h, count - 1);
   assert.ok(await Endpoint.findOne({ where: { slug: rotated.body.slug } }));
+});
+
+test("a method longer than 10 characters is 405 and stores nothing", async () => {
+  const before = await Event.count();
+  const res = await hook().unsubscribe(`/h/${endpoint.slug}`);
+  assert.strictEqual(res.status, 405);
+  assert.strictEqual(res.body.error.code, "METHOD_NOT_ALLOWED");
+  assert.strictEqual(await Event.count(), before);
+});
+
+test("OPTIONS is 204 with no CORS headers and stores nothing", async () => {
+  const before = await Event.count();
+  const res = await hook()
+    .options(`/h/${endpoint.slug}`)
+    .set("Origin", "https://evil.example")
+    .set("Access-Control-Request-Method", "POST");
+  assert.strictEqual(res.status, 204);
+  assert.strictEqual(res.headers["access-control-allow-origin"], undefined);
+  assert.strictEqual(await Event.count(), before);
 });

@@ -1,6 +1,13 @@
 const Router = require("@koa/router");
 const { z } = require("zod");
-const { sequelize, User, Session, EmailToken, AuditLog } = require("../models");
+const {
+  sequelize,
+  User,
+  Session,
+  ApiToken,
+  EmailToken,
+  AuditLog,
+} = require("../models");
 const auth = require("../middleware/auth");
 const rateLimit = require("../middleware/rateLimit");
 const validate = require("../middleware/validate");
@@ -176,6 +183,10 @@ router.post(
       const found = await User.findByPk(id, { transaction });
       await found.setPassword(password, transaction);
       await Session.destroy({ where: { userId: id }, transaction });
+      await ApiToken.destroy({
+        where: { workspaceId: (await found.getWorkspace({ transaction })).id },
+        transaction,
+      });
       return found;
     });
     await AuditLog.record("password.reset", {

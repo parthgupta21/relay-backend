@@ -31,12 +31,15 @@ const deliveryAttemptDuration = new client.Histogram({
   registers: [registry],
 });
 
+const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+
 const middleware = async (ctx, next) => {
   const end = httpDuration.startTimer();
   await next();
   const route = ctx._matchedRoute || "unmatched";
-  end({ method: ctx.method, route });
-  httpRequests.inc({ method: ctx.method, route, status: ctx.status });
+  const method = METHODS.includes(ctx.method) ? ctx.method : "OTHER";
+  end({ method, route });
+  httpRequests.inc({ method, route, status: ctx.status });
 };
 
 const serve = (port, ready) => {

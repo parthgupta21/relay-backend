@@ -10,7 +10,14 @@ const {
   tokenFrom,
   newAgent,
 } = require("./helpers");
-const { Session, AuditLog, User, EmailToken, Workspace } = require("../models");
+const {
+  Session,
+  AuditLog,
+  User,
+  EmailToken,
+  Workspace,
+  ApiToken,
+} = require("../models");
 
 const API = "/api/v1/auth";
 const EMAIL = "alice@example.com";
@@ -171,6 +178,15 @@ test("forgot and reset change the password and kill all sessions", async () => {
   const second = newAgent();
   await first.post(`${API}/login`).send({ email: EMAIL, password: PASSWORD });
   await second.post(`${API}/login`).send({ email: EMAIL, password: PASSWORD });
+  const workspace = await Workspace.findOne({
+    include: [{ association: "owner", where: { email: EMAIL } }],
+  });
+  const { token: apiToken } = await ApiToken.issue(workspace.id, { name: "t" });
+  const listEndpoints = () =>
+    request(app.callback())
+      .get("/api/v1/endpoints")
+      .set("Authorization", `Bearer ${apiToken}`);
+  assert.strictEqual((await listEndpoints()).status, 200);
 
   const forgot = await newAgent()
     .post(`${API}/forgot-password`)
@@ -191,6 +207,7 @@ test("forgot and reset change the password and kill all sessions", async () => {
 
   assert.strictEqual((await first.get(`${API}/me`)).status, 401);
   assert.strictEqual((await second.get(`${API}/me`)).status, 401);
+  assert.strictEqual((await listEndpoints()).status, 401);
   assert.strictEqual(
     (
       await newAgent()
@@ -280,6 +297,19 @@ test("cross-origin POST is rejected, same origin allowed", async () => {
     .set("Origin", new URL(process.env.APP_BASE_URL).origin)
     .send({ email: EMAIL });
   assert.strictEqual(good.status, 202);
+});
+
+test("cookie POST without Origin follows Sec-Fetch-Site", async () => {
+  const post = (site) =>
+    newAgent()
+      .post(`${API}/forgot-password`)
+      .set("Cookie", "relay_sid=x")
+      .set(site ? { "Sec-Fetch-Site": site } : {})
+      .send({ email: EMAIL });
+  assert.strictEqual((await post("cross-site")).status, 403);
+  assert.strictEqual((await post("same-site")).status, 403);
+  assert.strictEqual((await post("same-origin")).status, 202);
+  assert.strictEqual((await post()).status, 202);
 });
 
 test("health endpoints and unknown routes", async () => {

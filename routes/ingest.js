@@ -8,6 +8,7 @@ const {
   Destination,
   Delivery,
 } = require("../models");
+const rateLimit = require("../middleware/rateLimit");
 const { enqueueDeliveries } = require("../services/queue");
 const { publish } = require("../services/realtime");
 const { limitIngest, recordUsage } = require("../services/usage");
@@ -22,8 +23,15 @@ const tooDeep = (value, level = 0) =>
     Object.values(value).some((child) => tooDeep(child, level + 1)));
 
 const router = new Router();
+router.use(rateLimit("ingest", "INGEST_IP_RATE_PER_MINUTE", 1200));
 
 router.all("/h/:slug{/*rest}", async (ctx) => {
+  if (ctx.method === "OPTIONS") {
+    ctx.status = 204;
+    return;
+  }
+  if (ctx.method.length > 10)
+    throw new AppError("METHOD_NOT_ALLOWED", 405, "Method not allowed");
   const { slug } = ctx.params;
   const endpoint = await Endpoint.findOne({
     where: { slug, isActive: true },

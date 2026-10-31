@@ -1,4 +1,6 @@
 process.env.NODE_ENV = "test";
+process.env.API_RATE_PER_MINUTE ??= "10000";
+process.env.INGEST_IP_RATE_PER_MINUTE ??= "10000";
 process.env.AUTH_RATE_PER_MINUTE ??= "10000";
 process.env.ACCOUNT_DELETE_RATE_PER_MINUTE ??= "10000";
 const { after } = require("node:test");

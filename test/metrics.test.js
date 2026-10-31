@@ -65,6 +65,13 @@ test("route labels use the router template, never the ingest slug", async () => 
   assert.ok(!text.includes(endpoint.slug));
 });
 
+test("a non-standard method is labeled OTHER", async () => {
+  await request(app.callback()).unsubscribe("/no/such/path");
+  const text = await metrics.registry.metrics();
+  assert.ok(text.includes('method="OTHER",route="unmatched"'));
+  assert.ok(!text.includes("UNSUBSCRIBE"));
+});
+
 test("an unknown path is labeled unmatched", async () => {
   const res = await request(app.callback()).get("/no/such/path");
   assert.strictEqual(res.status, 404);

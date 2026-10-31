@@ -5,6 +5,7 @@ const Koa = require("koa");
 const Router = require("@koa/router");
 const bodyParser = require("koa-bodyparser");
 const originCheck = require("./middleware/originCheck");
+const rateLimit = require("./middleware/rateLimit");
 const authRoutes = require("./routes/auth");
 const endpointRoutes = require("./routes/endpoints");
 const eventRoutes = require("./routes/events");
@@ -66,6 +67,11 @@ const role = process.env.ROLE || "all";
 if (role !== "ingest") {
   const api = new Router({ prefix: "/api/v1" });
   api.use(
+    (ctx, next) => {
+      ctx.set("Cache-Control", "no-store");
+      return next();
+    },
+    rateLimit("api", "API_RATE_PER_MINUTE", 600),
     originCheck,
     bodyParser({ enableTypes: ["json"], jsonLimit: "100kb" }),
   );

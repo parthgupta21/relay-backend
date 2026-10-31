@@ -29,6 +29,8 @@ const clean = async () => {
   const keys = [
     ...(await queue.connection.keys("test:rl:auth:*")),
     ...(await queue.connection.keys("test:rl:account-delete:*")),
+    ...(await queue.connection.keys("test:rl:api:*")),
+    ...(await queue.connection.keys("test:rl:ingest:*")),
   ];
   if (keys.length) await queue.connection.del(...keys);
 };
@@ -118,4 +120,32 @@ test("account delete is limited by ACCOUNT_DELETE_RATE_PER_MINUTE", async (t) =>
   assert.ok(
     res.headers["retry-after"] >= 1 && res.headers["retry-after"] <= 60,
   );
+});
+
+test("the API is limited per IP by API_RATE_PER_MINUTE", async (t) => {
+  limitTo(t, "API_RATE_PER_MINUTE", "2");
+  freezeClock(t);
+  const get = () => request(app.callback()).get(`${API}/auth/me`);
+  assert.strictEqual((await get()).status, 401);
+  assert.strictEqual((await get()).status, 401);
+  const res = await get();
+  assert.strictEqual(res.status, 429);
+  assert.strictEqual(res.body.error.code, "RATE_LIMITED");
+});
+
+test("ingest is limited per IP even for an unknown slug", async (t) => {
+  limitTo(t, "INGEST_IP_RATE_PER_MINUTE", "2");
+  freezeClock(t);
+  const post = () => request(app.callback()).post("/h/no-such-slug");
+  assert.strictEqual((await post()).status, 404);
+  assert.strictEqual((await post()).status, 404);
+  const res = await post();
+  assert.strictEqual(res.status, 429);
+  assert.strictEqual(res.body.error.code, "RATE_LIMITED");
+});
+
+test("API responses are not cacheable", async () => {
+  const res = await request(app.callback()).get(`${API}/auth/me`);
+  assert.strictEqual(res.status, 401);
+  assert.strictEqual(res.headers["cache-control"], "no-store");
 });

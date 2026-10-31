@@ -344,6 +344,8 @@ Rate limits, logging and metrics. These are also in `.env.example`:
 | Variable                         | Default in `.env.example` | Purpose                                                                                                                      |
 | -------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `INGEST_RATE_PER_MINUTE`         | `600`                     | Requests per endpoint per minute on `/h/*`. Above it: `429 RATE_LIMITED`.                                                    |
+| `INGEST_IP_RATE_PER_MINUTE`      | `1200`                    | Requests per client IP per minute on `/h/*`, checked before the slug lookup. Above it: `429 RATE_LIMITED`.                   |
+| `API_RATE_PER_MINUTE`            | `600`                     | Requests per client IP per minute on all of `/api/v1`. Above it: `429 RATE_LIMITED`.                                         |
 | `AUTH_RATE_PER_MINUTE`           | `10`                      | Requests per client IP per minute on register, login, verify-email, resend-verification, forgot-password and reset-password. |
 | `ACCOUNT_DELETE_RATE_PER_MINUTE` | `5`                       | Requests per client IP per minute on `POST /account/delete`.                                                                 |
 | `LOG_FORMAT`                     | `text`                    | `json` writes one JSON object per line.                                                                                      |
@@ -372,7 +374,7 @@ The limits are stored on the workspace and returned by `/auth/me`. `maxEndpoints
 
 ## API reference
 
-Base path: `/api/v1`. Auth is a `relay_sid` session cookie (HttpOnly, SameSite=Lax, 7 days). `POST`, `PATCH` and `DELETE` also require the `Origin` header, when present, to match `APP_BASE_URL`. JSON bodies are limited to 100 KB.
+Base path: `/api/v1`. Auth is a `relay_sid` session cookie (HttpOnly, SameSite=Lax, 7 days). `POST`, `PATCH` and `DELETE` also require the `Origin` header, when present, to match `APP_BASE_URL`. When `Origin` is absent, the request is rejected with `403` if `Sec-Fetch-Site` is `cross-site` or `same-site`; a missing header, `same-origin` and `none` pass. Every response carries `Cache-Control: no-store`. JSON bodies are limited to 100 KB.
 
 Endpoint, event, destination, delivery, usage and analytics routes also accept an API token as `Authorization: Bearer rly_...`. A token acts as the workspace owner. A request with a Bearer header and no cookie skips the `Origin` check. Token management, `/auth/me`, account deletion and the admin routes accept a session only, and answer `401` to a Bearer token. `POST /auth/logout` needs no authentication: it ends the session named by the cookie. A suspended or deleted workspace gets `403` on every other authenticated route, including `/auth/me`. Sessions are kept while a workspace is suspended, so reactivation restores access.
 
@@ -418,7 +420,7 @@ Errors use one envelope. `details` appears only when the error carries entries, 
 | POST   | `/auth/login`               | none    | Start a session and set the cookie.                                                                                        |
 | POST   | `/auth/logout`              | none    | End the session named by the cookie. Works for suspended users.                                                            |
 | POST   | `/auth/forgot-password`     | none    | Send a reset email. Answers `202`.                                                                                         |
-| POST   | `/auth/reset-password`      | none    | Set a new password with a reset token.                                                                                     |
+| POST   | `/auth/reset-password`      | none    | Set a new password. Ends all sessions and deletes all API tokens.                                                          |
 | GET    | `/auth/me`                  | session | Current user (including `isOperator`), workspace status and plan limits.                                                   |
 
 Register, verify-email, resend-verification, login, forgot-password and reset-password share one per-IP limit: `AUTH_RATE_PER_MINUTE` requests per minute (default 10), then `429 RATE_LIMITED`. Logout and `/auth/me` are not limited.
@@ -582,11 +584,11 @@ A suspended workspace:
 
 ### Ingest and health
 
-| Method | Path                        | Auth | Purpose                                                                                                                                                                    |
-| ------ | --------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ANY    | `/h/:slug` and `/h/:slug/*` | none | Capture a request. Returns `200 { id, duplicate }`. `404` for unknown or disabled slugs or a workspace that is not active, `413` above the body limit, `429` over a limit. |
-| GET    | `/healthz`                  | none | Liveness.                                                                                                                                                                  |
-| GET    | `/readyz`                   | none | Readiness. Answers `503` if MySQL is down. The body `{ ok, redis }` reports Redis, but Redis does not affect the status code.                                              |
+| Method | Path                        | Auth | Purpose                                                                                                                                                                                                                                                                                   |
+| ------ | --------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ANY    | `/h/:slug` and `/h/:slug/*` | none | Capture a request. Returns `200 { id, duplicate }`. `404` for unknown or disabled slugs or a workspace that is not active, `413` above the body limit, `405` for a method longer than 10 characters, `429` over a limit. `OPTIONS` answers `204` with no CORS headers and stores nothing. |
+| GET    | `/healthz`                  | none | Liveness.                                                                                                                                                                                                                                                                                 |
+| GET    | `/readyz`                   | none | Readiness. Answers `503` if MySQL is down. The body `{ ok, redis }` reports Redis, but Redis does not affect the status code.                                                                                                                                                             |
 
 ### Realtime
 
@@ -703,7 +705,7 @@ The `route` label is the router template, for example `/h/:slug{/*rest}` or `/ap
 
 - **Sessions.** Random token in an HttpOnly, SameSite=Lax cookie (`Secure` in production), 7 day lifetime.
 - **Passwords.** argon2, minimum 10 characters. Register and resend answer the same way whether or not an account exists.
-- **CSRF.** `POST`, `PATCH` and `DELETE` on `/api/v1` are rejected with `403` if `Origin` is present and not `APP_BASE_URL`. Socket.IO applies the same origin check.
+- **CSRF.** `POST`, `PATCH` and `DELETE` on `/api/v1` are rejected with `403` if `Origin` is present and not `APP_BASE_URL`, or if `Origin` is absent and `Sec-Fetch-Site` is `cross-site` or `same-site`. Socket.IO applies the same origin check.
 - **Tenant isolation.** Reads go through workspace-scoped queries. A record you do not own returns `404`, never `403`.
 - **SSRF.** Destination URLs are checked on create. The worker re-resolves and checks again, then connects to the pinned address so DNS cannot change between check and send. Only `unicast` ranges pass, `::/96` is blocked, and a destination cannot point at the RELAY ingest host. `SSRF_ALLOWLIST` is refused in production.
 - **Signing secrets.** Generated as `whsec_` plus 32 random bytes. Encrypted with AES-256-GCM. Returned only by create and rotate.
@@ -764,6 +766,8 @@ The stack serves plain HTTP. TLS must terminate in front of it, for example at a
 
 `TRUST_PROXY=true` is required, because the app reads the client IP from `X-Forwarded-For`. The bundled nginx overwrites that header with the address of its direct peer, so a client cannot inject one. If a load balancer sits between the client and nginx, the direct peer is the balancer. The per-IP rate limits, the audit log and the stored source IP of events then show the balancer's address. The nginx template has no `real_ip` configuration.
 
+Set `TRUST_PROXY=true` only when the app is reachable solely through a proxy that overwrites `X-Forwarded-For`, as the bundled nginx does. If clients can reach the app directly, they can spoof their IP and dodge every per-IP limit.
+
 ### Backups
 
 - MySQL: `mysqldump` of the `relay` database, or a snapshot of the `mysql_data` volume.
@@ -795,7 +799,6 @@ Findings from the production-stack smoke test, plus the open items in [`memory.m
 - **NAT64 destinations are blocked.** The SSRF guard accepts only `unicast` addresses, so a destination in `64:ff9b::/96` is rejected.
 - **Raw route label on `/admin` 403 responses.** A `403` on an `/admin` route can appear in `relay_http_requests_total` with a raw route-regex string as the `route` label instead of a template.
 - **nginx error log can contain an ingest slug.** On upstream errors, nginx's own error log may include the request path. The access log format is masked, the error log is not.
-- **CORS preflight requests are captured.** Ingest sends no CORS headers, so a browser `OPTIONS` preflight sent to an ingest URL is stored as an event and counts toward the endpoint's rate limit and the workspace's daily and monthly quota.
 
 ## Roadmap
 
