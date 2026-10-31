@@ -1,6 +1,6 @@
 const Router = require("@koa/router");
 const { z } = require("zod");
-const { Endpoint } = require("../models");
+const { sequelize, Endpoint } = require("../models");
 const auth = require("../middleware/auth");
 const requireVerified = require("../middleware/requireVerified");
 const validate = require("../middleware/validate");
@@ -39,13 +39,19 @@ router.post(
   }),
   async (ctx) => {
     const workspace = ctx.state.workspace;
-    const scoped = Endpoint.forWorkspace(workspace.id);
-    if ((await scoped.count()) >= workspace.maxEndpoints)
-      throw new AppError("QUOTA_EXCEEDED", 422, "Endpoint limit reached");
-    const endpoint = await scoped.create({
-      ...ctx.state.body,
-      workspaceId: workspace.id,
-      slug: Endpoint.generateSlug(),
+    const endpoint = await sequelize.transaction(async (transaction) => {
+      await workspace.reload({ transaction, lock: transaction.LOCK.UPDATE });
+      const scoped = Endpoint.forWorkspace(workspace.id);
+      if ((await scoped.count({ transaction })) >= workspace.maxEndpoints)
+        throw new AppError("QUOTA_EXCEEDED", 422, "Endpoint limit reached");
+      return scoped.create(
+        {
+          ...ctx.state.body,
+          workspaceId: workspace.id,
+          slug: Endpoint.generateSlug(),
+        },
+        { transaction },
+      );
     });
     ctx.status = 201;
     ctx.body = endpoint.present();

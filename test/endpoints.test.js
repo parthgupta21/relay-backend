@@ -92,3 +92,21 @@ test("endpoint quota is enforced", async () => {
   assert.strictEqual(res.status, 422);
   assert.strictEqual(res.body.error.code, "QUOTA_EXCEEDED");
 });
+
+test("concurrent creates cannot exceed the endpoint limit", async () => {
+  const agent = await signUp("race-endpoints@example.com");
+  const workspace = await Workspace.findOne({
+    include: [
+      { association: "owner", where: { email: "race-endpoints@example.com" } },
+    ],
+  });
+  await workspace.update({ maxEndpoints: 2 });
+  const results = await Promise.all(
+    Array.from({ length: 4 }, (_, i) =>
+      agent.post(API).send({ name: `r${i}` }),
+    ),
+  );
+  const statuses = results.map((res) => res.status).sort();
+  assert.deepStrictEqual(statuses, [201, 201, 422, 422]);
+  assert.strictEqual((await agent.get(API)).body.length, 2);
+});

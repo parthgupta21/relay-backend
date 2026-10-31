@@ -151,6 +151,22 @@ test("another workspace gets 404 and the key is not consumed", async () => {
   );
 });
 
+test("concurrent requests with the same key run the handler once", async () => {
+  const before = (await eventDeliveries()).length;
+  const results = await Promise.all(
+    Array.from({ length: 4 }, () => replay(alice, deliveries[0].id, "k-race")),
+  );
+  const statuses = results.map((res) => res.status);
+  assert.ok(statuses.includes(202));
+  assert.ok(statuses.every((status) => [202, 409].includes(status)));
+  assert.strictEqual((await eventDeliveries()).length, before + 1);
+});
+
+test("the same key in another workspace does not return the stored response", async () => {
+  const res = await replay(bob, deliveries[0].id, "k-first");
+  assert.strictEqual(res.status, 404);
+});
+
 test("an unverified user cannot replay", async () => {
   const carol = await signUp("carol-replay@example.com", { verify: false });
   await carol.post("/api/v1/auth/login").send({

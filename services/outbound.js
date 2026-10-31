@@ -32,12 +32,8 @@ const allowedCustomHeaders = (headers) =>
     ),
   );
 
-const sign = (secret, timestamp, body) =>
-  crypto
-    .createHmac("sha256", secret)
-    .update(`${timestamp}.`)
-    .update(body)
-    .digest("hex");
+const sign = (secret, prefix, body) =>
+  crypto.createHmac("sha256", secret).update(prefix).update(body).digest("hex");
 
 const send = ({ delivery, event, destination, secret, address, url }) =>
   new Promise((resolve) => {
@@ -51,7 +47,7 @@ const send = ({ delivery, event, destination, secret, address, url }) =>
       "X-Relay-Delivery-Id": delivery.publicId,
       "X-Relay-Attempt": String(delivery.attemptCount),
       "X-Relay-Timestamp": String(timestamp),
-      "X-Relay-Signature": `t=${timestamp},v1=${sign(secret, timestamp, body)}`,
+      "X-Relay-Signature": `t=${timestamp},v1=${sign(secret, `${timestamp}.`, body)},v2=${sign(secret, `${timestamp}.${event.publicId}.${delivery.publicId}.`, body)}`,
     };
     let req;
     let connectTimer;

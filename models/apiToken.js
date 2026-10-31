@@ -27,18 +27,21 @@ const ApiToken = sequelize.define(
 
 ApiToken.MAX_PER_WORKSPACE = 20;
 
-ApiToken.issue = async (workspaceId, { name, expiresInDays }) => {
+ApiToken.issue = async (workspaceId, { name, expiresInDays }, transaction) => {
   const token = `rly_${randomToken(32)}`;
-  const apiToken = await ApiToken.create({
-    workspaceId,
-    name,
-    prefix: token.slice(0, 12),
-    tokenHash: sha256(token),
-    lastUsedAt: null,
-    expiresAt: expiresInDays
-      ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
-      : null,
-  });
+  const apiToken = await ApiToken.create(
+    {
+      workspaceId,
+      name,
+      prefix: token.slice(0, 12),
+      tokenHash: sha256(token),
+      lastUsedAt: null,
+      expiresAt: expiresInDays
+        ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
+        : null,
+    },
+    { transaction },
+  );
   return { apiToken, token };
 };
 

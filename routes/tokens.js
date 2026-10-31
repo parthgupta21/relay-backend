@@ -1,6 +1,6 @@
 const Router = require("@koa/router");
 const { z } = require("zod");
-const { ApiToken, AuditLog } = require("../models");
+const { sequelize, ApiToken, AuditLog } = require("../models");
 const auth = require("../middleware/auth");
 const requireVerified = require("../middleware/requireVerified");
 const validate = require("../middleware/validate");
@@ -42,15 +42,19 @@ router.post(
     }),
   }),
   async (ctx) => {
-    const workspaceId = ctx.state.workspace.id;
-    if (
-      (await ApiToken.count({ where: { workspaceId } })) >=
-      ApiToken.MAX_PER_WORKSPACE
-    )
-      throw new AppError("QUOTA_EXCEEDED", 422, "API token limit reached");
-    const { apiToken, token } = await ApiToken.issue(
-      workspaceId,
-      ctx.state.body,
+    const { workspace } = ctx.state;
+    const { apiToken, token } = await sequelize.transaction(
+      async (transaction) => {
+        await workspace.reload({ transaction, lock: transaction.LOCK.UPDATE });
+        if (
+          (await ApiToken.count({
+            where: { workspaceId: workspace.id },
+            transaction,
+          })) >= ApiToken.MAX_PER_WORKSPACE
+        )
+          throw new AppError("QUOTA_EXCEEDED", 422, "API token limit reached");
+        return ApiToken.issue(workspace.id, ctx.state.body, transaction);
+      },
     );
     await audit(ctx, "token.created", apiToken);
     ctx.status = 201;

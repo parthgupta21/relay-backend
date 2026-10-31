@@ -112,16 +112,23 @@ test("event is forwarded byte-exact and signed to every destination", async () =
     assert.strictEqual(received.headers["x-relay-event-id"], res.body.id);
     assert.strictEqual(received.headers["x-relay-attempt"], "1");
     assert.match(received.headers["x-relay-delivery-id"], /^dlv_/);
-    const [t, v1] = received.headers["x-relay-signature"]
+    const [t, v1, v2] = received.headers["x-relay-signature"]
       .split(",")
       .map((part) => part.split("=")[1]);
     assert.strictEqual(t, received.headers["x-relay-timestamp"]);
-    const expected = crypto
-      .createHmac("sha256", destination.signingSecret)
-      .update(`${t}.`)
-      .update(body)
-      .digest("hex");
-    assert.strictEqual(v1, expected);
+    const expected = (prefix) =>
+      crypto
+        .createHmac("sha256", destination.signingSecret)
+        .update(prefix)
+        .update(body)
+        .digest("hex");
+    assert.strictEqual(v1, expected(`${t}.`));
+    assert.strictEqual(
+      v2,
+      expected(
+        `${t}.${received.headers["x-relay-event-id"]}.${received.headers["x-relay-delivery-id"]}.`,
+      ),
+    );
   }
   assert.strictEqual(
     receiver.requests.find((r) => r.url === "/ok2").headers["x-custom"],

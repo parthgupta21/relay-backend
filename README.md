@@ -605,33 +605,35 @@ Only the worker publishes `delivery.updated`, when it claims a delivery and when
 
 Every delivery carries these headers, set in `services/outbound.js`:
 
-| Header                | Value                                   |
-| --------------------- | --------------------------------------- |
-| `X-Relay-Signature`   | `t=<unix seconds>,v1=<hex HMAC-SHA256>` |
-| `X-Relay-Timestamp`   | Unix seconds, same as `t`.              |
-| `X-Relay-Event-Id`    | Event public ID.                        |
-| `X-Relay-Delivery-Id` | Delivery public ID.                     |
-| `X-Relay-Attempt`     | Attempt number.                         |
+| Header                | Value                                |
+| --------------------- | ------------------------------------ |
+| `X-Relay-Signature`   | `t=<unix seconds>,v1=<hex>,v2=<hex>` |
+| `X-Relay-Timestamp`   | Unix seconds, same as `t`.           |
+| `X-Relay-Event-Id`    | Event public ID.                     |
+| `X-Relay-Delivery-Id` | Delivery public ID.                  |
+| `X-Relay-Attempt`     | Attempt number.                      |
 
-The signed string is the timestamp, a dot, then the raw request body bytes. The key is the destination's signing secret (`whsec_...`).
+Both signatures are HMAC-SHA256 with the destination's signing secret (`whsec_...`) as the key. Verify `v2`, which is recommended. It signs `<t>.<X-Relay-Event-Id>.<X-Relay-Delivery-Id>.<raw body>`, so a captured body cannot be replayed under different event or delivery IDs. `v1` signs `<t>.<raw body>` and stays in the header for existing verifiers.
 
 ```js
 const crypto = require("crypto");
 
 // rawBody must be the unparsed request body (Buffer), not re-serialized JSON.
-function verify(rawBody, signatureHeader, secret, toleranceSeconds = 300) {
+function verify(rawBody, headers, secret, toleranceSeconds = 300) {
   const parts = Object.fromEntries(
-    signatureHeader.split(",").map((part) => part.split("=")),
+    headers["x-relay-signature"].split(",").map((part) => part.split("=")),
   );
   const t = parts.t;
   const expected = crypto
     .createHmac("sha256", secret)
-    .update(`${t}.`)
+    .update(
+      `${t}.${headers["x-relay-event-id"]}.${headers["x-relay-delivery-id"]}.`,
+    )
     .update(rawBody)
     .digest("hex");
 
   const a = Buffer.from(expected);
-  const b = Buffer.from(parts.v1 || "");
+  const b = Buffer.from(parts.v2 || "");
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
 
   // Recommended: reject old timestamps to limit replay of captured requests.

@@ -1,6 +1,6 @@
 const Router = require("@koa/router");
 const { z } = require("zod");
-const { Endpoint, Destination } = require("../models");
+const { sequelize, Endpoint, Destination } = require("../models");
 const auth = require("../middleware/auth");
 const requireVerified = require("../middleware/requireVerified");
 const validate = require("../middleware/validate");
@@ -69,17 +69,25 @@ router.post(
   async (ctx) => {
     const workspace = ctx.state.workspace;
     const endpoint = await Endpoint.getOwned(workspace.id, ctx.state.params.id);
-    if (
-      (await Destination.count({ where: { endpointId: endpoint.id } })) >=
-      workspace.maxDestinations
-    )
-      throw new AppError("QUOTA_EXCEEDED", 422, "Destination limit reached");
     await assertUrlAllowed(ctx.state.body.url);
     const signingSecret = Destination.generateSecret();
-    const destination = await Destination.create({
-      ...ctx.state.body,
-      endpointId: endpoint.id,
-      signingSecret: Destination.encryptSecret(signingSecret),
+    const destination = await sequelize.transaction(async (transaction) => {
+      await workspace.reload({ transaction, lock: transaction.LOCK.UPDATE });
+      if (
+        (await Destination.count({
+          where: { endpointId: endpoint.id },
+          transaction,
+        })) >= workspace.maxDestinations
+      )
+        throw new AppError("QUOTA_EXCEEDED", 422, "Destination limit reached");
+      return Destination.create(
+        {
+          ...ctx.state.body,
+          endpointId: endpoint.id,
+          signingSecret: Destination.encryptSecret(signingSecret),
+        },
+        { transaction },
+      );
     });
     ctx.status = 201;
     ctx.body = { ...destination.present(), signingSecret };
