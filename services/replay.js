@@ -4,12 +4,12 @@ const { AppError } = require("../utils");
 
 const HOURLY_LIMIT = 100;
 
-const checkQuota = async (workspaceId) => {
+const checkQuota = async (workspaceId, deliveries) => {
   const hour = new Date().toISOString().slice(0, 13).replace(/\D/g, "");
   const key = `replays:${workspaceId}:${hour}`;
   const [[, count]] = await connection
     .multi()
-    .incr(key)
+    .incrby(key, deliveries)
     .expire(key, 3600)
     .exec();
   if (count > HOURLY_LIMIT)
@@ -23,7 +23,7 @@ const checkQuota = async (workspaceId) => {
 };
 
 const createReplays = async (workspaceId, replays) => {
-  await checkQuota(workspaceId);
+  await checkQuota(workspaceId, replays.length);
   const created = await Delivery.bulkCreate(
     replays.map(({ eventId, destinationId, replayOfId = null }) => ({
       eventId,

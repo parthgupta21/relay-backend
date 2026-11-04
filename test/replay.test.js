@@ -4,7 +4,7 @@ const IORedis = require("ioredis");
 const { Worker } = require("bullmq");
 const { app, request, sequelize, resetDatabase, signUp } = require("./helpers");
 const { startReceiver } = require("./receiver");
-const { Workspace } = require("../models");
+const { Workspace, Delivery } = require("../models");
 const { processJob } = require("../services/delivery");
 const queue = require("../services/queue");
 
@@ -239,6 +239,30 @@ test("more than 100 replays an hour gets 429", async () => {
     (await replay(alice, deliveries[0].id, "k-limit")).status,
     202,
   );
+});
+
+test("a multi-destination replay counts one per delivery and cannot cross the limit", async () => {
+  const workspace = await Workspace.findOne({ order: [["id", "ASC"]] });
+  const hour = new Date().toISOString().slice(0, 13).replace(/\D/g, "");
+  const key = `replays:${workspace.id}:${hour}`;
+  const replayEvent = (idem) =>
+    alice
+      .post(`/api/v1/events/${eventId}/replay`)
+      .set("Idempotency-Key", idem)
+      .send({});
+  await queue.connection.del(key);
+  const ok = await replayEvent("k-count");
+  assert.strictEqual(ok.body.deliveries.length, 2);
+  assert.strictEqual(await queue.connection.get(key), "2");
+  for (const { id } of ok.body.deliveries) await waitForSettled(id);
+
+  await queue.connection.set(key, 99);
+  const before = await Delivery.count();
+  const res = await replayEvent("k-cross");
+  assert.strictEqual(res.status, 429);
+  assert.strictEqual(res.body.error.code, "RATE_LIMITED");
+  assert.strictEqual(await Delivery.count(), before);
+  await queue.connection.del(key);
 });
 
 test("a failed request releases its key", async () => {

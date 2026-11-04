@@ -73,7 +73,7 @@ RELAY sits in front of your server. Senders post to a stable RELAY URL and get a
 
 - Replay one delivery or one event to chosen destinations.
 - `Idempotency-Key` required on replay. Retried requests return the stored response.
-- Hourly replay quota per workspace.
+- Hourly replay quota per workspace, counted in deliveries.
 
 **Usage and analytics**
 
@@ -416,10 +416,10 @@ Errors use one envelope. `details` appears only when the error carries entries, 
 | ------ | --------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/auth/register`            | none    | Create an account. Always answers `202`, whether or not the email exists. Rejects `@deleted.invalid` addresses with `422`. |
 | POST   | `/auth/verify-email`        | none    | Consume a verification token.                                                                                              |
-| POST   | `/auth/resend-verification` | none    | Send a new verification email. Answers `202`.                                                                              |
+| POST   | `/auth/resend-verification` | none    | Send a new verification email, at most one per user per 60 seconds. Answers `202` either way.                              |
 | POST   | `/auth/login`               | none    | Start a session and set the cookie.                                                                                        |
 | POST   | `/auth/logout`              | none    | End the session named by the cookie. Works for suspended users.                                                            |
-| POST   | `/auth/forgot-password`     | none    | Send a reset email. Answers `202`.                                                                                         |
+| POST   | `/auth/forgot-password`     | none    | Send a reset email, at most one per user per 60 seconds. Answers `202` either way.                                         |
 | POST   | `/auth/reset-password`      | none    | Set a new password. Ends all sessions and deletes all API tokens.                                                          |
 | GET    | `/auth/me`                  | session | Current user (including `isOperator`), workspace status and plan limits.                                                   |
 
@@ -668,7 +668,7 @@ Retry rules, from `services/delivery.js` and `utils/backoff.js`:
   - Per workspace, events older than `retentionDays` are deleted in batches of 1 000. Deliveries and attempts follow through `ON DELETE CASCADE`.
   - For a workspace with status `deleted`, all events are deleted regardless of age, then its endpoints.
   - Expired sessions and used or expired email tokens are deleted. These two deletes are single statements, not batched.
-- Replay quota is 100 requests per workspace per UTC hour. Over it, the answer is `429 RATE_LIMITED` with `Retry-After` set to the seconds until the next hour. One event replay to several destinations costs one.
+- Replay quota is 100 deliveries per workspace per UTC hour. Over it, the answer is `429 RATE_LIMITED` with `Retry-After` set to the seconds until the next hour, and nothing is created. One event replay to several destinations costs one per destination.
 - The worker closes its queue, timers and database on `SIGTERM` and `SIGINT`. The API process does the same on `SIGTERM` and forces exit after 10 seconds.
 
 Other known gaps are tracked in [`memory.md`](memory.md). See also [Known limitations](#known-limitations).

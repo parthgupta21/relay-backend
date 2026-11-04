@@ -107,7 +107,7 @@ router.post(
         deletedAt: null,
       },
     });
-    if (user)
+    if (user && !(await EmailToken.recentlyIssued(user.id, "verify")))
       email
         .sendVerification(user.email, await EmailToken.issue(user.id, "verify"))
         .catch((err) =>
@@ -157,7 +157,7 @@ router.post(
     const user = await User.findOne({
       where: { email: ctx.state.body.email, deletedAt: null },
     });
-    if (user)
+    if (user && !(await EmailToken.recentlyIssued(user.id, "reset")))
       email
         .sendPasswordReset(user.email, await EmailToken.issue(user.id, "reset"))
         .catch((err) => console.error("reset email failed", err.message));

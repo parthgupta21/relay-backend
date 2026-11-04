@@ -147,6 +147,8 @@ test("unverified user can log in, resend issues a working token", async () => {
   assert.strictEqual(login.status, 200);
   assert.strictEqual(login.body.user.emailVerified, false);
 
+  const { id: userId } = await User.findOne({ where: { email: bob } });
+  await EmailToken.update({ expiresAt: new Date() }, { where: { userId } });
   const resend = await agent
     .post(`${API}/resend-verification`)
     .send({ email: bob });
@@ -171,6 +173,28 @@ test("resend-verification ignores soft-deleted users", async () => {
     .send({ email: carol });
   assert.strictEqual(resend.status, 202);
   assert.strictEqual(await EmailToken.count(), before);
+});
+
+test("a second resend or forgot within the cooldown answers the same and sends nothing", async () => {
+  const dave = "dave@example.com";
+  await newAgent()
+    .post(`${API}/register`)
+    .send({ email: dave, password: PASSWORD });
+  await waitForEmail(dave, "Verify");
+  const user = await User.findOne({ where: { email: dave } });
+  const count = (purpose) =>
+    EmailToken.count({ where: { userId: user.id, purpose } });
+  const post = (path) =>
+    newAgent().post(`${API}/${path}`).send({ email: dave });
+
+  const resend = await post("resend-verification");
+  assert.strictEqual(await count("verify"), 1);
+  const first = await post("forgot-password");
+  const second = await post("forgot-password");
+  assert.strictEqual(second.status, first.status);
+  assert.deepStrictEqual(second.body, first.body);
+  assert.strictEqual(resend.status, 202);
+  assert.strictEqual(await count("reset"), 1);
 });
 
 test("forgot and reset change the password and kill all sessions", async () => {

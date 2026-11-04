@@ -34,6 +34,23 @@ EmailToken.issue = async (userId, purpose, transaction) => {
   return token;
 };
 
+EmailToken.COOLDOWN_MS = 60 * 1000;
+
+EmailToken.recentlyIssued = async (userId, purpose) =>
+  Boolean(
+    await EmailToken.findOne({
+      where: {
+        userId,
+        purpose,
+        expiresAt: {
+          [Op.gt]: new Date(
+            Date.now() + EmailToken.TTL_MS[purpose] - EmailToken.COOLDOWN_MS,
+          ),
+        },
+      },
+    }),
+  );
+
 EmailToken.consume = async (token, purpose, transaction) => {
   const row = await EmailToken.findOne({
     where: {
